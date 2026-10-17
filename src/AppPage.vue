@@ -55,6 +55,9 @@
         <label><input type="checkbox" v-model="allSign" /> 全部签到</label>
         <label><input type="checkbox" v-model="allLogin" /> 全部登录保号</label>
       </div>
+      <div class="cred-tip">
+        托管凭据（推荐）：插件中心 → 本安装实例 → 托管凭据（Secret Bindings）→ 按站点域名创建 Cookie 绑定，把返回的 <code>cred_xxx</code> 填入右侧「托管凭据引用」列；与直填 Cookie 二选一、优先托管凭据。自定义站点不在内置清单内，需直填 Cookie。
+      </div>
       <n-data-table
         :columns="columns"
         :data="draft.sites"
@@ -240,7 +243,7 @@ const columns = [
   },
   {
     title: '托管凭据引用', key: 'credential_ref', minWidth: 160,
-    render: (row: SiteRow) => h(NInput, { value: row.credential_ref, size: 'small', placeholder: 'credential_ref 或留空', onUpdateValue: (v: string) => { row.credential_ref = v } }),
+    render: (row: SiteRow) => h(NInput, { value: row.credential_ref, size: 'small', placeholder: 'cred_xxx（推荐）', onUpdateValue: (v: string) => { row.credential_ref = v } }),
   },
   {
     title: 'Token/API Key', key: 'token', minWidth: 140,
@@ -307,4 +310,6 @@ onMounted(refresh)
 .error-text { color: #d03050; margin-left: 8px; }
 .all-row { margin-bottom: 8px; font-size: 12px; color: var(--n-text-color-3); display: flex; gap: 12px; }
 .all-label { margin-right: 4px; }
+.cred-tip { margin-bottom: 8px; font-size: 12px; color: var(--n-text-color-3); line-height: 1.6; }
+.cred-tip code { background: var(--n-action-color); padding: 0 4px; border-radius: 3px; }
 </style>

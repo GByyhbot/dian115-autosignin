@@ -1,5 +1,15 @@
 # 发布记录
 
+## v1.1.0（2026-10-17）
+
+支持宿主托管凭据（credential_ref），PT Cookie 不再需要明文存进插件配置。
+
+- manifest `permissions.network` 声明 22 个内置 PT 站点 origin，宿主据此为该安装实例启用托管凭据能力
+- 配置页每个站点支持填入 `cred_xxx`（插件中心 → 本安装实例 → 托管凭据绑定创建后返回）；与直填 Cookie 二选一，优先托管凭据，Cookie 由宿主加密保管、请求时自动注入，不进插件存储与日志
+- 运行时 Go 链路此前已内置支持，本次为 manifest 授权与配置页提示完善；自定义站点仍需直填 Cookie
+
+SHA-256: `52129faf8b7f9bdabeb546fd0531ce89cc474d8e0dd84dac09e9a4b182e37e14`
+
 ## v1.0.3（2026-10-17）
 
 修复宿主运行时阶段 `plugin_incompatible`（安装检查通过后运行时报错）。
