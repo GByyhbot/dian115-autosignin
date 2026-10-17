@@ -11,9 +11,13 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const wasmPath = join(root, 'build/runtime/plugin.wasm')
 const module = new WebAssembly.Module(readFileSync(wasmPath))
 const exports = WebAssembly.Module.exports(module).map(item => item.name)
-for (const name of ['memory', 'dian115_alloc', 'dian115_handle']) {
- if (!exports.includes(name)) throw new Error(`Missing reactor export: ${name}`)
-}
+// 宿主 5.x 实测（社区 douban115 工作插件）只接受这一精确导出集合；
+// TinyGo c-shared 附带的 malloc/free/asyncify 等多余导出会被判 plugin_incompatible。
+const ALLOWED_EXPORTS = new Set(['memory', '_initialize', 'dian115_alloc', 'dian115_handle'])
+const extra = exports.filter(name => !ALLOWED_EXPORTS.has(name))
+if (extra.length > 0) throw new Error(`Runtime exports non-contract symbols ${extra.join(', ')}; run scripts/build-runtime.mjs (strips extras)`)
+const missing = [...ALLOWED_EXPORTS].filter(name => !exports.includes(name))
+if (missing.length > 0) throw new Error(`Missing contract export: ${missing.join(', ')}`)
 if (exports.includes('_start')) throw new Error('Runtime must be a reactor, not a command')
 const imports = WebAssembly.Module.imports(module)
 for (const name of ['host_call', 'host_read']) {

@@ -1,5 +1,16 @@
 # 发布记录
 
+## v1.0.3（2026-10-17）
+
+修复宿主运行时阶段 `plugin_incompatible`（安装检查通过后运行时报错）。
+
+- 根因：TinyGo 0.43 wasip1 默认 asyncify 调度器会让模块多导出 `malloc/free/calloc/realloc/fmin*/fmax*/asyncify_*`；宿主 5.x 只接受精确导出集合 `[memory, _initialize, dian115_alloc, dian115_handle]`（对照真机可用的社区插件 douban115 验证）
+- 修复：构建后自动剥离多余导出（scripts/strip-exports.mjs），导出集合与契约完全一致；check-wasm 增加导出集合断言防止回归
+- 模块 1.16 MiB，满足 2 MiB 上限；wazero（宿主同款引擎）探针验证 initialize/state/action/shutdown 全部正常
+- 功能、权限、兼容范围（>=3.8.51 <6.0.0）与发布者签名身份不变
+
+SHA-256: `fc7ab0e273c4d416c1b8dcbb27dc8b9e220fd16199cbd047efb4381706f32310`
+
 ## v1.0.2（2026-10-17）
 
 按宿主构建要求重写 WASM 运行时。

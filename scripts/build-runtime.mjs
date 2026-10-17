@@ -19,4 +19,9 @@ const result = spawnSync(tinygo, ['build', '-target=wasi', '-buildmode=c-shared'
 
 if (result.error) throw result.error
 if (result.status !== 0) throw new Error(`TinyGo runtime build failed with exit code ${result.status}`)
+// 宿主 ABI 白名单只接受 [memory, _initialize, dian115_alloc, dian115_handle]；
+// 剥离 TinyGo c-shared 附带导出的 malloc/free/asyncify 等（见 strip-exports.mjs）。
+const { stripExportsFromFile } = await import('./strip-exports.mjs')
+const removed = stripExportsFromFile(output, output)
+process.stdout.write(`Stripped ${removed} extra export(s) from ${output}\n`)
 process.stdout.write(`Built TinyGo WASM runtime: ${output}\n`)
