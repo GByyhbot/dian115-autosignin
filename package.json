@@ -1,0 +1,33 @@
+{
+  "name": "dian115-autosignin",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build:ui": "vue-tsc --noEmit && vite build",
+    "build:runtime": "node scripts/build-runtime.mjs",
+    "build": "npm run build:ui && npm run build:runtime",
+    "test": "go test ./...",
+    "check": "node scripts/check-wasm.mjs",
+    "test:wasm": "node scripts/smoke-wasm.mjs",
+    "package": "node scripts/package.mjs"
+  },
+  "peerDependencies": {
+    "@lucide/vue": "^1.16.0",
+    "naive-ui": "^2.38.0",
+    "vue": "^3.4.0"
+  },
+  "devDependencies": {
+    "@lucide/vue": "^1.16.0",
+    "@originjs/vite-plugin-federation": "^1.4.1",
+    "@types/node": "^22.0.0",
+    "@vitejs/plugin-vue": "^5.2.4",
+    "naive-ui": "^2.38.0",
+    "typescript": "^5.0.0",
+    "vite": "^6.4.3",
+    "vue": "^3.4.0",
+    "vue-tsc": "^2.0.0",
+    "yazl": "^3.3.1"
+  }
+}

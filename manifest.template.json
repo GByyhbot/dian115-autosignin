@@ -1,0 +1,70 @@
+{
+  "$schema": "https://raw.githubusercontent.com/madbrolab/dian115/7637a392e9512bd0f7965b99445768969eb075fc/docs/plugin-platform/manifest.schema.json",
+  "schema_version": 1,
+  "id": "community.dian115-autosignin",
+  "name": "站点自动签到",
+  "version": "1.0.0",
+  "description": "按计划自动签到、模拟登录 PT 站点并发送通知，适配自 MoviePilot autosignin 3.0.3。",
+  "default_locale": "zh-CN",
+  "publisher": {
+    "name": "GByyhbot",
+    "key_id": "ed25519:REPLACED_BY_PACKAGER",
+    "url": "https://github.com/GByyhbot/dian115-autosignin"
+  },
+  "compatibility": {
+    "dian115": ">=3.8.51 <5.0.0",
+    "plugin_api": "^2.0"
+  },
+  "runtime": {
+    "kind": "wasm",
+    "entry": "runtime/plugin.wasm",
+    "protocol": "dian115:wasm@1",
+    "startup_timeout_ms": 10000,
+    "shutdown_timeout_ms": 5000,
+    "timeout_ms": 120000,
+    "background_timeout_ms": 3600000,
+    "max_concurrency": 1,
+    "restart_policy": "on-failure",
+    "memory_mb": 128,
+    "resident": true
+  },
+  "permissions": {
+    "apis": [
+      {
+        "path": "/api/plugin-runtime/storage/:key",
+        "method": "GET",
+        "reason": "读取插件站点配置、签到历史和运行状态"
+      },
+      {
+        "path": "/api/plugin-runtime/storage/:key",
+        "method": "PUT",
+        "reason": "保存插件站点配置、签到历史和运行状态"
+      },
+      {
+        "path": "/api/notifications/plugin",
+        "method": "POST",
+        "reason": "发送用户启用的签到与模拟登录结果通知"
+      }
+    ],
+    "network": []
+  },
+  "ui": {
+    "mode": "federation",
+    "icon": "frontend/icon.svg",
+    "federation": {
+      "entry": "frontend/dist/assets/remoteEntry.js",
+      "assets_root": "frontend/dist/assets",
+      "module": "./AppPage"
+    }
+  },
+  "events": [],
+  "jobs": [],
+  "homepage": "https://github.com/GByyhbot/dian115-autosignin",
+  "repository": "https://github.com/GByyhbot/dian115-autosignin",
+  "license": "NOASSERTION",
+  "tags": [
+    "pt",
+    "automation",
+    "signin"
+  ]
+}
