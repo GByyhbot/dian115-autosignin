@@ -2,7 +2,7 @@
 package core
 
 import (
-	"encoding/json"
+	"dian115-autosignin/pluginjson"
 	"errors"
 	"fmt"
 	"regexp"
@@ -131,12 +131,99 @@ func (c Config) ResolveSiteIDs(selected []string) []string {
 	return out
 }
 
-// JSONRoundTrip 验证值可被 JSON 序列化（宿主 Bridge 要求）。
-func JSONRoundTrip(v any) error {
-	b, err := json.Marshal(v)
-	if err != nil {
-		return err
+// siteToMap 将站点转为与 UI/存储一致的 JSON 对象（字段名对应原 struct tag）。
+func siteToMap(s Site) map[string]any {
+	return map[string]any{
+		"id": s.ID, "key": s.Key, "name": s.Name, "url": s.URL,
+		"cookie": s.Cookie, "credential_ref": s.CredentialRef, "ua": s.UA,
+		"timeout": s.Timeout, "apikey": s.Apikey, "token": s.Token,
+		"custom": s.Custom,
 	}
-	var out any
-	return json.Unmarshal(b, &out)
+}
+
+// ConfigToMap 将配置转为与 UI/存储一致的 JSON 对象。
+func ConfigToMap(c Config) map[string]any {
+	sites := make([]any, 0, len(c.Sites))
+	for _, s := range c.Sites {
+		sites = append(sites, siteToMap(s))
+	}
+	return map[string]any{
+		"schema_version": c.SchemaVersion, "enabled": c.Enabled, "cron": c.Cron,
+		"notify": c.Notify, "queue_cnt": c.QueueCnt, "sign_sites": stringSliceToAny(c.SignSites),
+		"login_sites": stringSliceToAny(c.LoginSites), "retry_keyword": c.RetryKeyword,
+		"sites": sites,
+	}
+}
+
+// EncodeConfig 将配置编码为 JSON 文档。
+func EncodeConfig(c Config) (pluginjson.Raw, error) {
+	b, err := pluginjson.Encode(ConfigToMap(c))
+	if err != nil {
+		return nil, err
+	}
+	return pluginjson.Raw(b), nil
+}
+
+// DecodeConfig 从 JSON 文档解码配置；缺失字段回退默认值。
+func DecodeConfig(raw pluginjson.Raw) (Config, error) {
+	c := DefaultConfig()
+	if raw == nil {
+		return c, nil
+	}
+	if pluginjson.Field(raw, "schema_version") != nil {
+		c.SchemaVersion = pluginjson.Int(pluginjson.Field(raw, "schema_version"))
+	}
+	c.Enabled = pluginjson.Bool(pluginjson.Field(raw, "enabled"))
+	c.Cron = pluginjson.Text(pluginjson.Field(raw, "cron"))
+	c.Notify = pluginjson.Bool(pluginjson.Field(raw, "notify"))
+	if q := pluginjson.Int(pluginjson.Field(raw, "queue_cnt")); q > 0 {
+		c.QueueCnt = q
+	}
+	c.SignSites = StringList(pluginjson.Field(raw, "sign_sites"))
+	c.LoginSites = StringList(pluginjson.Field(raw, "login_sites"))
+	c.RetryKeyword = pluginjson.Text(pluginjson.Field(raw, "retry_keyword"))
+	sites := pluginjson.Field(raw, "sites")
+	for position := 0; ; position++ {
+		entry := pluginjson.Index(sites, position)
+		if entry == nil {
+			break
+		}
+		c.Sites = append(c.Sites, Site{
+			ID:            pluginjson.Text(pluginjson.Field(entry, "id")),
+			Key:           pluginjson.Text(pluginjson.Field(entry, "key")),
+			Name:          pluginjson.Text(pluginjson.Field(entry, "name")),
+			URL:           pluginjson.Text(pluginjson.Field(entry, "url")),
+			Cookie:        pluginjson.Text(pluginjson.Field(entry, "cookie")),
+			CredentialRef: pluginjson.Text(pluginjson.Field(entry, "credential_ref")),
+			UA:            pluginjson.Text(pluginjson.Field(entry, "ua")),
+			Timeout:       pluginjson.Int(pluginjson.Field(entry, "timeout")),
+			Apikey:        pluginjson.Text(pluginjson.Field(entry, "apikey")),
+			Token:         pluginjson.Text(pluginjson.Field(entry, "token")),
+			Custom:        pluginjson.Bool(pluginjson.Field(entry, "custom")),
+		})
+	}
+	return c, nil
+}
+
+func stringSliceToAny(in []string) []any {
+	out := make([]any, 0, len(in))
+	for _, s := range in {
+		out = append(out, s)
+	}
+	return out
+}
+
+// StringList 从 JSON 数组中读取字符串列表。
+func StringList(raw pluginjson.Raw) []string {
+	out := []string{}
+	for position := 0; ; position++ {
+		entry := pluginjson.Index(raw, position)
+		if entry == nil {
+			break
+		}
+		if text := pluginjson.Text(entry); text != "" {
+			out = append(out, text)
+		}
+	}
+	return out
 }

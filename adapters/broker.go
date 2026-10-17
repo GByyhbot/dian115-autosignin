@@ -2,15 +2,16 @@
 package adapters
 
 import (
-	"bytes"
 	"context"
 	"dian115-autosignin/core"
 	"dian115-autosignin/host"
-	"encoding/json"
+	"dian115-autosignin/pluginjson"
+	"errors"
 	"fmt"
 	"io"
-	"math/rand/v2"
+	"math/rand"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -22,8 +23,8 @@ type Broker interface {
 
 // Store 供处理器读写少量持久化缓存（如 tjupt 答案缓存）。
 type Store interface {
-	Read(key string, out any) (string, bool, error)
-	Write(key string, value any, etag, idempotency string) error
+	Read(key string) (pluginjson.Raw, string, bool, error)
+	Write(key string, value pluginjson.Raw, etag, idempotency string) error
 }
 
 // CaptchaReader 读取验证码图片并返回识别文本；DIAN115 宿主不提供 OCR，
@@ -112,8 +113,8 @@ func (c *Client) PostForm(ctx context.Context, rawURL string, s core.Site, timeo
 }
 
 // PostJSON 发起 JSON POST。
-func (c *Client) PostJSON(ctx context.Context, rawURL string, s core.Site, timeout int, payload any, headers map[string]string) (int, []byte, error) {
-	b, err := json.Marshal(payload)
+func (c *Client) PostJSON(ctx context.Context, rawURL string, s core.Site, timeout int, payload map[string]any, headers map[string]string) (int, []byte, error) {
+	b, err := pluginjson.Encode(payload)
 	if err != nil {
 		return 0, nil, err
 	}
@@ -141,14 +142,68 @@ func Resolve(base, ref string) string {
 	return u.ResolveReference(r).String()
 }
 
-// ParseJSON 解析 JSON 正文为通用对象。
+// ParseJSON 用 pluginjson 解析 JSON 正文为通用对象（不链接 encoding/json）。
 func ParseJSON(body []byte) (map[string]any, error) {
-	var v map[string]any
-	dec := json.NewDecoder(bytes.NewReader(body))
-	if err := dec.Decode(&v); err != nil {
-		return nil, err
+	return convertObject(pluginjson.Raw(body))
+}
+
+func convertObject(raw pluginjson.Raw) (map[string]any, error) {
+	fields := pluginjson.Fields(raw)
+	if fields == nil {
+		return nil, errors.New("json: not an object")
 	}
-	return v, nil
+	out := make(map[string]any, len(fields))
+	for key, value := range fields {
+		converted, err := convertValue(value)
+		if err != nil {
+			return nil, err
+		}
+		out[key] = converted
+	}
+	return out, nil
+}
+
+func convertArray(raw pluginjson.Raw) ([]any, error) {
+	out := []any{}
+	for position := 0; ; position++ {
+		entry := pluginjson.Index(raw, position)
+		if entry == nil {
+			break
+		}
+		converted, err := convertValue(entry)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, converted)
+	}
+	return out, nil
+}
+
+func convertValue(raw pluginjson.Raw) (any, error) {
+	text := strings.TrimSpace(string(raw))
+	if text == "" {
+		return nil, errors.New("json: empty value")
+	}
+	switch text[0] {
+	case '{':
+		return convertObject(raw)
+	case '[':
+		return convertArray(raw)
+	case '"':
+		return pluginjson.Text(raw), nil
+	case 't', 'f':
+		return pluginjson.Bool(raw), nil
+	case 'n':
+		return nil, nil
+	default:
+		if number, err := strconv.Atoi(text); err == nil {
+			return number, nil
+		}
+		if number, err := strconv.ParseFloat(text, 64); err == nil {
+			return number, nil
+		}
+		return nil, errors.New("json: invalid number " + text)
+	}
 }
 
 // JSONString 安全读取 map 中的字符串值。
@@ -161,7 +216,7 @@ func JSONString(v map[string]any, keys ...string) string {
 	return ""
 }
 
-// JSONInt 安全读取 map 中的数字值（支持 float64 / json.Number）。
+// JSONInt 安全读取 map 中的数字值（支持 float64 / int / 数字字符串）。
 func JSONInt(v map[string]any, keys ...string) int {
 	for _, key := range keys {
 		switch n := v[key].(type) {
@@ -169,10 +224,6 @@ func JSONInt(v map[string]any, keys ...string) int {
 			return int(n)
 		case int:
 			return n
-		case json.Number:
-			if i, err := n.Int64(); err == nil {
-				return int(i)
-			}
 		case string:
 			var i int
 			if _, err := fmt.Sscanf(n, "%d", &i); err == nil {
@@ -215,7 +266,7 @@ func SignOK(msg string) Result { return Result{Success: true, LoggedIn: true, Me
 // LoginOK 构造仅确认登录。
 func LoginOK(msg string) Result { return Result{LoggedIn: true, Message: msg} }
 
-// ReadCloser 帮助函数，供需要流式读取正文的实现使用。
+// readAll 帮助函数，供需要流式读取正文的实现使用。
 func readAll(r io.Reader) ([]byte, error) { return io.ReadAll(r) }
 
 // randInt 返回 [0,n) 的随机整数，供随机选择答案使用。
@@ -223,5 +274,5 @@ func randInt(n int) int {
 	if n <= 0 {
 		return 0
 	}
-	return rand.IntN(n)
+	return rand.Intn(n)
 }

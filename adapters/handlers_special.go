@@ -6,9 +6,9 @@ import (
 	"crypto/sha1"
 	"crypto/sha256"
 	"dian115-autosignin/core"
+	"dian115-autosignin/pluginjson"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/json"
 	"fmt"
 	"net/url"
 	"regexp"
@@ -496,10 +496,13 @@ func signTJUPT(ctx context.Context, s core.Site, c *Client) Result {
 		return Fail("签到失败，验证码图像处理失败")
 	}
 	// 答案缓存
-	var answers map[string]string
+	answers := map[string]string{}
 	answersKey := "tjupt_answers"
 	if c.Store != nil {
-		if _, found, rErr := c.Store.Read(answersKey, &answers); rErr == nil && found {
+		if raw, _, found, rErr := c.Store.Read(answersKey); rErr == nil && found {
+			for k, v := range pluginjson.Fields(raw) {
+				answers[k] = pluginjson.Text(v)
+			}
 			if ans, ok := answers[hash]; ok && tjuptHasOption(page, ans) {
 				return tjuptSubmit(ctx, s, c, ans, page)
 			}
@@ -520,11 +523,11 @@ func signTJUPT(ctx context.Context, s core.Site, c *Client) Result {
 		return Fail("签到失败，未找到验证码匹配答案")
 	}
 	if c.Store != nil {
-		if answers == nil {
-			answers = map[string]string{}
-		}
 		answers[hash] = answer
-		_ = c.Store.Write(answersKey, answers, "", "tjupt-answers-cache")
+		cached, err := pluginjson.Encode(answers)
+		if err == nil {
+			_ = c.Store.Write(answersKey, pluginjson.Raw(cached), "", "tjupt-answers-cache")
+		}
 	}
 	return tjuptSubmit(ctx, s, c, answer, page)
 }
@@ -577,13 +580,14 @@ func tjuptMatchDouban(ctx context.Context, c *Client, s core.Site, opt, targetHa
 	if err != nil || status != 200 {
 		return false
 	}
-	var list []map[string]any
-	if jErr := json.Unmarshal(body, &list); jErr != nil {
-		return false
-	}
-	for _, item := range list {
-		imgURL, ok := item["img"].(string)
-		if !ok || imgURL == "" {
+	list := pluginjson.Raw(body)
+	for position := 0; ; position++ {
+		item := pluginjson.Index(list, position)
+		if item == nil {
+			break
+		}
+		imgURL := pluginjson.Text(pluginjson.Field(item, "img"))
+		if imgURL == "" {
 			continue
 		}
 		_, imgBody, imgErr := c.Get(ctx, imgURL, s, 20, nil)

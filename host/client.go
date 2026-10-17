@@ -1,25 +1,33 @@
 package host
 
 import (
+	"dian115-autosignin/pluginjson"
 	"encoding/base64"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
 )
 
-type Caller interface{ Call(string, any, any) error }
-type Request struct {
-	Method        string            `json:"method"`
-	Path          string            `json:"path"`
-	Headers       map[string]string `json:"headers,omitempty"`
-	BodyBase64    string            `json:"body_base64,omitempty"`
-	CredentialRef string            `json:"credential_ref,omitempty"`
+// Caller 封装对宿主的一次 JSON-RPC host.* 调用：params 以 map 形式给出，
+// 返回 result 的原始 JSON（未解码）。实现位于 runtime 包（wasmimport）。
+type Caller interface {
+	Call(method string, params map[string]any) (pluginjson.Raw, error)
 }
+
+// Request 为一次宿主 Broker 网络请求。
+type Request struct {
+	Method        string
+	Path          string
+	Headers       map[string]string
+	BodyBase64    string
+	CredentialRef string
+}
+
+// Response 为宿主 Broker 返回。
 type Response struct {
-	Status     int                 `json:"status"`
-	Headers    map[string][]string `json:"headers"`
-	BodyBase64 string              `json:"body_base64"`
+	Status     int
+	Headers    map[string][]string
+	BodyBase64 string
 }
 
 func (r Response) Header(name string) string {
@@ -30,13 +38,7 @@ func (r Response) Header(name string) string {
 	}
 	return ""
 }
-func (r Response) Decode(out any) error {
-	b, err := r.BodyBytes()
-	if err != nil {
-		return err
-	}
-	return json.Unmarshal(b, out)
-}
+
 func (r Response) BodyBytes() ([]byte, error) {
 	b, err := base64.RawStdEncoding.DecodeString(r.BodyBase64)
 	if err != nil {
@@ -53,49 +55,76 @@ type Client struct{ Caller Caller }
 func EncodeBody(value []byte) string { return base64.RawStdEncoding.EncodeToString(value) }
 
 func (c Client) Do(req Request) (Response, error) {
-	var res Response
-	err := c.Caller.Call("host.call", req, &res)
-	if err == nil && res.Header("x-dian115-body-truncated") == "true" {
-		err = errors.New("broker response truncated")
+	params := map[string]any{"method": req.Method, "path": req.Path}
+	if len(req.Headers) > 0 {
+		params["headers"] = req.Headers
 	}
-	return res, err
+	if req.BodyBase64 != "" {
+		params["body_base64"] = req.BodyBase64
+	}
+	if req.CredentialRef != "" {
+		params["credential_ref"] = req.CredentialRef
+	}
+	result, err := c.Caller.Call("host.call", params)
+	if err != nil {
+		return Response{}, err
+	}
+	res := Response{
+		Status:     pluginjson.Int(pluginjson.Field(result, "status")),
+		BodyBase64: pluginjson.Text(pluginjson.Field(result, "body_base64")),
+		Headers:    map[string][]string{},
+	}
+	headers := pluginjson.Field(result, "headers")
+	for key, raw := range pluginjson.Fields(headers) {
+		var values []string
+		for position := 0; ; position++ {
+			entry := pluginjson.Index(raw, position)
+			if entry == nil {
+				break
+			}
+			values = append(values, pluginjson.Text(entry))
+		}
+		res.Headers[key] = values
+	}
+	if res.Header("x-dian115-body-truncated") == "true" {
+		return res, errors.New("broker response truncated")
+	}
+	return res, nil
 }
 
 var ErrConflict = errors.New("configuration changed; refresh before saving")
 
-func (c Client) Read(key string, out any) (string, bool, error) {
+// Read 读取 Host Storage 中 key 的原始 JSON 文档值。
+// 返回 (valueRaw, etag, found, err)。
+func (c Client) Read(key string) (pluginjson.Raw, string, bool, error) {
 	res, err := c.Do(Request{Method: "GET", Path: "/api/plugin-runtime/storage/" + key})
 	if err != nil {
-		return "", false, err
+		return nil, "", false, err
 	}
 	if res.Status == 404 {
-		return "", false, nil
+		return nil, "", false, nil
 	}
 	if res.Status != 200 {
-		return "", false, fmt.Errorf("storage read HTTP %d", res.Status)
+		return nil, "", false, fmt.Errorf("storage read HTTP %d", res.Status)
 	}
-	var body struct {
-		Data struct {
-			Value json.RawMessage `json:"value"`
-		} `json:"data"`
+	body, err := res.BodyBytes()
+	if err != nil {
+		return nil, "", false, err
 	}
-	if err = res.Decode(&body); err != nil {
-		return "", false, err
-	}
-	if len(body.Data.Value) == 0 {
-		return "", false, errors.New("storage value missing")
-	}
-	if err = json.Unmarshal(body.Data.Value, out); err != nil {
-		return "", false, err
+	value := pluginjson.Field(pluginjson.Field(body, "data"), "value")
+	if value == nil {
+		return nil, "", false, errors.New("storage value missing")
 	}
 	etag := res.Header("etag")
 	if etag == "" {
-		return "", false, errors.New("storage ETag missing")
+		return nil, "", false, errors.New("storage ETag missing")
 	}
-	return etag, true, nil
+	return value, etag, true, nil
 }
-func (c Client) Write(key string, value any, etag, idempotency string) error {
-	body, err := json.Marshal(map[string]any{"value": value})
+
+// Write 将已编码的 JSON 文档写入 Host Storage，支持 ETag 乐观锁。
+func (c Client) Write(key string, value pluginjson.Raw, etag, idempotency string) error {
+	body, err := pluginjson.Encode(map[string]any{"value": pluginjson.Raw(value)})
 	if err != nil {
 		return err
 	}

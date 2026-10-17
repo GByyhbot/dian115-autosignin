@@ -15,8 +15,11 @@ jobs:
           cache: npm
       - uses: actions/setup-go@v5
         with:
-          go-version: '1.27.1'
+          go-version: '1.25.x'
           cache: false
+      - uses: tinygo-org/setup-tinygo@v1
+        with:
+          install-binaryen: true
       - run: npm ci
       - run: go test ./...
       - run: npm run build

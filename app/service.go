@@ -8,8 +8,8 @@ import (
 	"dian115-autosignin/adapters"
 	"dian115-autosignin/core"
 	"dian115-autosignin/host"
+	"dian115-autosignin/pluginjson"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -20,8 +20,8 @@ import (
 )
 
 type Store interface {
-	Read(string, any) (string, bool, error)
-	Write(string, any, string, string) error
+	Read(string) (pluginjson.Raw, string, bool, error)
+	Write(string, pluginjson.Raw, string, string) error
 }
 
 // Service 为插件主服务。
@@ -30,29 +30,13 @@ type Service struct {
 	Broker adapters.Broker
 }
 
-// Input 为 runtime.invoke 载荷。
-type Input struct {
-	Envelope struct {
-		Op           string          `json:"op"`
-		InvocationID string          `json:"invocation_id"`
-		Payload      json.RawMessage `json:"payload"`
-	} `json:"envelope"`
-}
-
-// Heartbeat 心跳。
-type Heartbeat struct {
-	At     string `json:"at"`
-	Enabled int    `json:"enabled_sites"`
-	Status string `json:"status"`
-}
-
 // SiteResult 单站点一次动作的结果记录。
 type SiteResult struct {
-	Site     string `json:"site"`
-	SiteID   string `json:"site_id"`
-	Success  bool   `json:"success"`
-	LoggedIn bool   `json:"logged_in"`
-	Message  string `json:"message"`
+	Site     string
+	SiteID   string
+	Success  bool
+	LoggedIn bool
+	Message  string
 }
 
 // Completed 已签到或确认登录均完成本轮访问任务。
@@ -60,55 +44,58 @@ func (r SiteResult) Completed() bool { return r.Success || r.LoggedIn }
 
 // DayEntry 一天内某类型（sign/login）的执行记录。
 type DayEntry struct {
-	Do      []string     `json:"do"`
-	Retry   []string     `json:"retry"`
-	Results []SiteResult `json:"results"`
+	Do      []string
+	Retry   []string
+	Results []SiteResult
 }
 
 // History 签到与登录的 14 天历史，按天索引。
 type History struct {
-	Sign  map[string]*DayEntry `json:"sign"`
-	Login map[string]*DayEntry `json:"login"`
+	Sign  map[string]*DayEntry
+	Login map[string]*DayEntry
 }
 
 // RuntimeState 运行状态（含历史、随机调度与上次运行标记）。
 type RuntimeState struct {
-	LastRun     string   `json:"last_run"`
-	LastCronKey string   `json:"last_cron_key"`
-	LastError   string   `json:"last_error"`
-	RandomDate  string   `json:"random_date"`
-	RandomTimes []string `json:"random_times"`
-	History     History  `json:"history"`
+	LastRun     string
+	LastCronKey string
+	LastError   string
+	RandomDate  string
+	RandomTimes []string
+	History     History
 }
 
 const (
 	keyConfig  = "config"
 	keyRuntime = "runtime"
 	keyBeat    = "heartbeat"
-	version    = "1.0.0"
+	version    = "1.0.2"
 )
 
 // RunReport 动作返回的摘要。
 type RunReport struct {
-	Type     string       `json:"type"`
-	All      int          `json:"all"`
-	Done     int          `json:"done"`
-	Next     int          `json:"next"`
-	Success  int          `json:"success"`
-	LoggedIn int          `json:"logged_in"`
-	Failed   int          `json:"failed"`
-	Message  string       `json:"message"`
-	Results  []SiteResult `json:"results"`
+	Type     string
+	All      int
+	Done     int
+	Next     int
+	Success  int
+	LoggedIn int
+	Failed   int
+	Message  string
+	Results  []SiteResult
 }
 
 func (s Service) config() (core.Config, string, error) {
-	c := core.DefaultConfig()
-	rev, found, err := s.Store.Read(keyConfig, &c)
+	raw, rev, found, err := s.Store.Read(keyConfig)
 	if err != nil {
-		return c, "", err
+		return core.Config{}, "", err
 	}
 	if !found {
 		return core.DefaultConfig(), "", nil
+	}
+	c, err := core.DecodeConfig(raw)
+	if err != nil {
+		return core.Config{}, "", err
 	}
 	if err = c.Validate(); err != nil {
 		return c, "", err
@@ -117,14 +104,14 @@ func (s Service) config() (core.Config, string, error) {
 }
 
 func (s Service) runtimeState() (RuntimeState, error) {
-	var st RuntimeState
-	_, found, err := s.Store.Read(keyRuntime, &st)
+	raw, _, found, err := s.Store.Read(keyRuntime)
 	if err != nil {
-		return st, err
+		return RuntimeState{}, err
 	}
 	if !found {
-		return RuntimeState{History: History{Sign: map[string]*DayEntry{}, Login: map[string]*DayEntry{}}}, nil
+		return emptyRuntimeState(), nil
 	}
+	st := decodeRuntimeState(raw)
 	if st.History.Sign == nil {
 		st.History.Sign = map[string]*DayEntry{}
 	}
@@ -134,16 +121,20 @@ func (s Service) runtimeState() (RuntimeState, error) {
 	return st, nil
 }
 
-// Invoke 分发运行时调用。
-func (s Service) Invoke(in Input) (any, error) {
-	if in.Envelope.InvocationID == "" {
-		return nil, errors.New("invocation_id required")
-	}
-	switch in.Envelope.Op {
+func emptyRuntimeState() RuntimeState {
+	return RuntimeState{History: History{Sign: map[string]*DayEntry{}, Login: map[string]*DayEntry{}}}
+}
+
+// Invoke 分发运行时调用（op + 原始 payload）。
+func (s Service) Invoke(op, invocationID string, payload pluginjson.Raw) (any, error) {
+	switch op {
 	case "state":
-		return s.state(in.Envelope.Payload)
+		return s.state(payload)
 	case "action":
-		return s.action(in.Envelope.InvocationID, in.Envelope.Payload)
+		if invocationID == "" {
+			return nil, errors.New("invocation_id required")
+		}
+		return s.action(invocationID, payload)
 	case "job":
 		return map[string]any{"status": "skipped", "message": "No jobs declared; resident tick drives scheduling"}, nil
 	case "event":
@@ -153,101 +144,103 @@ func (s Service) Invoke(in Input) (any, error) {
 	}
 }
 
-func (s Service) state(raw json.RawMessage) (any, error) {
-	var p struct {
-		IfNoneMatch string `json:"if_none_match"`
-	}
-	if err := json.Unmarshal(raw, &p); err != nil {
-		return nil, err
-	}
+func (s Service) state(raw pluginjson.Raw) (any, error) {
 	c, rev, err := s.config()
 	if err != nil {
 		return nil, err
 	}
-	var beat Heartbeat
-	_, _, _ = s.Store.Read(keyBeat, &beat)
+	beat, err := s.heartbeat()
+	if err != nil {
+		return nil, err
+	}
 	runtimeState, err := s.runtimeState()
 	if err != nil {
 		return nil, err
 	}
 	state := map[string]any{
-		"config":          c,
+		"config":          core.ConfigToMap(c),
 		"config_revision": rev,
 		"heartbeat":       beat,
-		"runtime":         runtimeState,
+		"runtime":         encodeRuntimeState(runtimeState),
 		"mode":            "live",
 		"live_execution":  true,
 		"version":         version,
 	}
-	b, _ := json.Marshal(state)
+	b, _ := pluginjson.Encode(state)
 	digest := sha256.Sum256(b)
 	etag := `"` + hex.EncodeToString(digest[:]) + `"`
-	if p.IfNoneMatch == etag {
+	if pluginjson.Text(pluginjson.Field(raw, "if_none_match")) == etag {
 		return map[string]any{"not_modified": true, "etag": etag}, nil
 	}
 	return map[string]any{"state_version": hex.EncodeToString(digest[:]), "etag": etag, "state": state}, nil
+}
+
+func (s Service) heartbeat() (map[string]any, error) {
+	raw, _, found, err := s.Store.Read(keyBeat)
+	if err != nil {
+		return nil, err
+	}
+	if !found {
+		return map[string]any{"at": "", "enabled_sites": 0, "status": ""}, nil
+	}
+	return map[string]any{
+		"at":            pluginjson.Text(pluginjson.Field(raw, "at")),
+		"enabled_sites": pluginjson.Int(pluginjson.Field(raw, "enabled_sites")),
+		"status":        pluginjson.Text(pluginjson.Field(raw, "status")),
+	}, nil
 }
 
 func failed(err error) map[string]any {
 	return map[string]any{"status": "failed", "message": err.Error()}
 }
 
-func (s Service) action(id string, raw json.RawMessage) (any, error) {
+func (s Service) action(id string, raw pluginjson.Raw) (any, error) {
 	if len(raw) > 64<<10 {
 		return failed(errors.New("action input exceeds 64 KiB")), nil
 	}
-	var p struct {
-		ID    string          `json:"id"`
-		Input json.RawMessage `json:"input"`
-	}
-	if err := json.Unmarshal(raw, &p); err != nil {
-		return nil, err
-	}
-	switch p.ID {
+	switch pluginjson.Text(pluginjson.Field(raw, "id")) {
 	case "save-config":
-		var v struct {
-			Config   core.Config `json:"config"`
-			Revision string      `json:"revision"`
-		}
-		if err := json.Unmarshal(p.Input, &v); err != nil {
+		input := pluginjson.Field(raw, "input")
+		c, err := core.DecodeConfig(pluginjson.Field(input, "config"))
+		if err != nil {
 			return failed(err), nil
 		}
-		if err := v.Config.Validate(); err != nil {
+		if err := c.Validate(); err != nil {
 			return failed(err), nil
 		}
 		_, rev, err := s.config()
 		if err != nil {
 			return failed(err), nil
 		}
-		if rev != v.Revision {
+		if rev != pluginjson.Text(pluginjson.Field(input, "revision")) {
 			return failed(host.ErrConflict), nil
+		}
+		document, err := core.EncodeConfig(c)
+		if err != nil {
+			return failed(err), nil
 		}
 		digest := sha256.Sum256([]byte(id))
 		key := "save-config-" + hex.EncodeToString(digest[:])
-		if err = s.Store.Write(keyConfig, v.Config, rev, key); err != nil {
+		if err = s.Store.Write(keyConfig, document, rev, key); err != nil {
 			return failed(err), nil
 		}
 		return map[string]any{"status": "succeeded", "message": "配置已保存"}, nil
 	case "sign-now":
-		var v struct {
-			Type string `json:"type"` // "sign" | "login"
-		}
-		if err := json.Unmarshal(p.Input, &v); err != nil {
-			return failed(err), nil
-		}
-		if v.Type == "" {
-			v.Type = "sign"
+		input := pluginjson.Field(raw, "input")
+		typ := pluginjson.Text(pluginjson.Field(input, "type"))
+		if typ == "" {
+			typ = "sign"
 		}
 		if s.Broker == nil {
 			return failed(errors.New("network broker unavailable")), nil
 		}
 		ctx, cancel := context.WithTimeout(context.Background(), 110*time.Second)
 		defer cancel()
-		report, execErr := s.runType(ctx, v.Type, id)
+		report, execErr := s.runType(ctx, typ, id)
 		if execErr != nil {
 			return failed(execErr), nil
 		}
-		return map[string]any{"status": "succeeded", "message": fmt.Sprintf("%s：全部 %d，完成 %d，失败 %d", typeLabel(v.Type), report.All, report.Done, report.Failed), "report": report}, nil
+		return map[string]any{"status": "succeeded", "message": fmt.Sprintf("%s：全部 %d，完成 %d，失败 %d", typeLabel(typ), report.All, report.Done, report.Failed), "report": encodeRunReport(report)}, nil
 	case "clear-history":
 		st, err := s.runtimeState()
 		if err != nil {
@@ -276,7 +269,12 @@ func (s Service) Tick(now time.Time) error {
 		status = runErr.Error()
 	}
 	stamp := now.UTC().Format(time.RFC3339Nano)
-	if err := s.Store.Write(keyBeat, Heartbeat{stamp, enabled, status}, "", fmt.Sprintf("heartbeat-%s", stamp)); err != nil {
+	beat := map[string]any{"at": stamp, "enabled_sites": enabled, "status": status}
+	document, err := pluginjson.Encode(beat)
+	if err != nil {
+		return err
+	}
+	if err := s.Store.Write(keyBeat, pluginjson.Raw(document), "", fmt.Sprintf("heartbeat-%s", stamp)); err != nil {
 		return err
 	}
 	return runErr
@@ -615,7 +613,11 @@ func dropOldest(h *History) {
 }
 
 func (s Service) saveRuntime(st RuntimeState, idem string) error {
-	return s.Store.Write(keyRuntime, st, "", idem)
+	document, err := pluginjson.Encode(encodeRuntimeState(st))
+	if err != nil {
+		return err
+	}
+	return s.Store.Write(keyRuntime, pluginjson.Raw(document), "", idem)
 }
 
 // notify 通过宿主通知 API 发送结果摘要。
@@ -639,7 +641,7 @@ func (s Service) notify(typ string, c core.Config, report RunReport) error {
 		b.WriteString(fmt.Sprintf("【%s】%s\n", r.Site, r.Message))
 	}
 	body := truncate(b.String(), 1900)
-	payload, _ := json.Marshal(map[string]any{"level": level, "title": title, "body": body})
+	payload, _ := pluginjson.Encode(map[string]any{"level": level, "title": title, "body": body})
 	res, err := s.Broker.Do(host.Request{
 		Method:  "POST",
 		Path:    "/api/notifications/plugin",
@@ -677,4 +679,113 @@ func truncate(s string, n int) string {
 		return s
 	}
 	return string(r[:n])
+}
+
+// ---------------------------------------------------------------------------
+// RuntimeState / History 的 pluginjson 编解码（字段名与原 struct tag 一致）
+// ---------------------------------------------------------------------------
+
+func encodeSiteResult(r SiteResult) map[string]any {
+	return map[string]any{
+		"site": r.Site, "site_id": r.SiteID, "success": r.Success,
+		"logged_in": r.LoggedIn, "message": r.Message,
+	}
+}
+
+func encodeDayEntry(e *DayEntry) map[string]any {
+	do := make([]any, 0, len(e.Do))
+	for _, id := range e.Do {
+		do = append(do, id)
+	}
+	retry := make([]any, 0, len(e.Retry))
+	for _, id := range e.Retry {
+		retry = append(retry, id)
+	}
+	results := make([]any, 0, len(e.Results))
+	for _, r := range e.Results {
+		results = append(results, encodeSiteResult(r))
+	}
+	return map[string]any{"do": do, "retry": retry, "results": results}
+}
+
+func encodeDayMap(m map[string]*DayEntry) map[string]any {
+	out := map[string]any{}
+	for day, e := range m {
+		out[day] = encodeDayEntry(e)
+	}
+	return out
+}
+
+func encodeHistory(h History) map[string]any {
+	return map[string]any{"sign": encodeDayMap(h.Sign), "login": encodeDayMap(h.Login)}
+}
+
+func encodeRuntimeState(st RuntimeState) map[string]any {
+	times := make([]any, 0, len(st.RandomTimes))
+	for _, t := range st.RandomTimes {
+		times = append(times, t)
+	}
+	return map[string]any{
+		"last_run": st.LastRun, "last_cron_key": st.LastCronKey, "last_error": st.LastError,
+		"random_date": st.RandomDate, "random_times": times, "history": encodeHistory(st.History),
+	}
+}
+
+func decodeRuntimeState(raw pluginjson.Raw) RuntimeState {
+	st := RuntimeState{History: History{Sign: map[string]*DayEntry{}, Login: map[string]*DayEntry{}}}
+	if raw == nil {
+		return st
+	}
+	st.LastRun = pluginjson.Text(pluginjson.Field(raw, "last_run"))
+	st.LastCronKey = pluginjson.Text(pluginjson.Field(raw, "last_cron_key"))
+	st.LastError = pluginjson.Text(pluginjson.Field(raw, "last_error"))
+	st.RandomDate = pluginjson.Text(pluginjson.Field(raw, "random_date"))
+	st.RandomTimes = core.StringList(pluginjson.Field(raw, "random_times"))
+	st.History.Sign = decodeDayMap(pluginjson.Field(pluginjson.Field(raw, "history"), "sign"))
+	st.History.Login = decodeDayMap(pluginjson.Field(pluginjson.Field(raw, "history"), "login"))
+	return st
+}
+
+func decodeDayMap(raw pluginjson.Raw) map[string]*DayEntry {
+	out := map[string]*DayEntry{}
+	if raw == nil {
+		return out
+	}
+	for day, entry := range pluginjson.Fields(raw) {
+		out[day] = decodeDayEntry(entry)
+	}
+	return out
+}
+
+func decodeDayEntry(raw pluginjson.Raw) *DayEntry {
+	entry := &DayEntry{}
+	entry.Do = core.StringList(pluginjson.Field(raw, "do"))
+	entry.Retry = core.StringList(pluginjson.Field(raw, "retry"))
+	results := pluginjson.Field(raw, "results")
+	for position := 0; ; position++ {
+		item := pluginjson.Index(results, position)
+		if item == nil {
+			break
+		}
+		entry.Results = append(entry.Results, SiteResult{
+			Site:     pluginjson.Text(pluginjson.Field(item, "site")),
+			SiteID:   pluginjson.Text(pluginjson.Field(item, "site_id")),
+			Success:  pluginjson.Bool(pluginjson.Field(item, "success")),
+			LoggedIn: pluginjson.Bool(pluginjson.Field(item, "logged_in")),
+			Message:  pluginjson.Text(pluginjson.Field(item, "message")),
+		})
+	}
+	return entry
+}
+
+func encodeRunReport(report RunReport) map[string]any {
+	results := make([]any, 0, len(report.Results))
+	for _, r := range report.Results {
+		results = append(results, encodeSiteResult(r))
+	}
+	return map[string]any{
+		"type": report.Type, "all": report.All, "done": report.Done, "next": report.Next,
+		"success": report.Success, "logged_in": report.LoggedIn, "failed": report.Failed,
+		"message": report.Message, "results": results,
+	}
 }
