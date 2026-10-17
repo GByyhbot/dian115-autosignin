@@ -69,7 +69,7 @@ const (
 	keyConfig  = "config"
 	keyRuntime = "runtime"
 	keyBeat    = "heartbeat"
-	version    = "1.0.2"
+	version    = "1.1.1"
 )
 
 // RunReport 动作返回的摘要。
