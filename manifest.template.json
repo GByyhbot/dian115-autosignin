@@ -3,7 +3,7 @@
   "schema_version": 1,
   "id": "community.dian115-autosignin",
   "name": "站点自动签到",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "按计划自动签到、模拟登录 PT 站点并发送通知，适配自 MoviePilot autosignin 3.0.3。",
   "default_locale": "zh-CN",
   "publisher": {
@@ -12,7 +12,7 @@
     "url": "https://github.com/GByyhbot/dian115-autosignin"
   },
   "compatibility": {
-    "dian115": ">=3.8.51 <5.0.0",
+    "dian115": ">=3.8.51 <6.0.0",
     "plugin_api": "^2.0"
   },
   "runtime": {

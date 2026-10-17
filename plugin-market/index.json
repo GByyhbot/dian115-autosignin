@@ -9,12 +9,12 @@
     {
       "id": "community.dian115-autosignin",
       "name": "站点自动签到",
-      "version": "1.0.0",
+      "version": "1.0.1",
       "description": "按计划自动签到、模拟登录 PT 站点并发送通知，适配自 MoviePilot autosignin 3.0.3。",
       "author": "GByyhbot",
       "homepage": "https://github.com/GByyhbot/dian115-autosignin",
-      "package_url": "https://github.com/GByyhbot/dian115-autosignin/releases/download/v1.0.0/community.dian115-autosignin-1.0.0.d115p",
-      "sha256": "c55bd0b753c1a88a58a4f6ce3cd8d1fde0b81dfbca81b6a65e6fc27b9a54fb88",
+      "package_url": "https://github.com/GByyhbot/dian115-autosignin/releases/download/v1.0.1/community.dian115-autosignin-1.0.1.d115p",
+      "sha256": "b79f41d9470cd78e719ed8f116a11f900ef94f0eaf6aacc1c6a9149f34bae9d9",
       "runtime": {
         "kind": "wasm",
         "protocol": "dian115:wasm@1",
