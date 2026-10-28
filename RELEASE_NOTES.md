@@ -1,5 +1,13 @@
 # 发布记录
 
+## v1.2.0（2026-10-28）
+
+- UI 迁移到官方独立页面模式（ui.mode=page，standalone HTML + connectPluginPage SDK），Module Federation 已废弃移除
+- 兼容范围调整为 `>=5.0.46 <6.0.0`（页面模式最低宿主要求）
+- 包内 index.html 纳入完整性清单与签名
+
+SHA-256: `e4d35294e3f7e1cdc44412f62cd4dc591ec7d7c7c5d915af88c94ead57f94705`
+
 ## v1.1.1（2026-10-17）
 
 - 修正运行时上报版本号（此前所有构建 UI 均显示 v1.0.2）
