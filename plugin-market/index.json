@@ -9,12 +9,12 @@
     {
       "id": "community.dian115-autosignin",
       "name": "站点自动签到",
-      "version": "1.2.0",
-      "description": "按计划自动签到、模拟登录 PT 站点并发送通知，适配自 MoviePilot autosignin 3.0.3；支持宿主托管凭据（credential_ref）。",
+      "version": "1.3.0",
+      "description": "按计划自动签到、模拟登录 PT 站点并发送通知，支持 CookieCloud 凭据同步与直填，适配自 MoviePilot autosignin 3.0.3。",
       "author": "GByyhbot",
       "homepage": "https://github.com/GByyhbot/dian115-autosignin",
-      "package_url": "https://github.com/GByyhbot/dian115-autosignin/releases/download/v1.2.0/community.dian115-autosignin-1.2.0.d115p",
-      "sha256": "e4d35294e3f7e1cdc44412f62cd4dc591ec7d7c7c5d915af88c94ead57f94705",
+      "package_url": "https://github.com/GByyhbot/dian115-autosignin/releases/download/v1.3.0/community.dian115-autosignin-1.3.0.d115p",
+      "sha256": "3d4deeea1e90fa04b903cc739b647fcdd1fdb2dee814748aedd5fe36f281ca68",
       "runtime": {
         "kind": "wasm",
         "protocol": "dian115:wasm@1",
@@ -37,31 +37,247 @@
             "path": "/api/notifications/plugin",
             "method": "POST",
             "reason": "发送用户启用的签到与模拟登录结果通知"
+          },
+          {
+            "path": "/api/plugin-runtime/http/cookies",
+            "method": "GET",
+            "reason": "读取站点受管会话的 Cookie 状态与数量"
+          },
+          {
+            "path": "/api/plugin-runtime/http/cookies",
+            "method": "PUT",
+            "reason": "把用户直填的站点 Cookie 持久化到受管会话"
+          },
+          {
+            "path": "/api/plugin-runtime/http/cookies",
+            "method": "DELETE",
+            "reason": "清空站点受管 Cookie 会话"
+          },
+          {
+            "path": "/api/plugin-runtime/http/cookiecloud",
+            "method": "GET",
+            "reason": "读取宿主本地 CookieCloud 概况供按域名导入"
+          },
+          {
+            "path": "/api/plugin-runtime/http/cookiecloud/import",
+            "method": "POST",
+            "reason": "从 CookieCloud 按站点域名导入 Cookie 到受管会话"
+          },
+          {
+            "path": "/api/plugin-runtime/http/sites",
+            "method": "GET",
+            "reason": "读取自定义站点地址列表"
+          },
+          {
+            "path": "/api/plugin-runtime/http/sites",
+            "method": "PUT",
+            "reason": "保存自定义站点地址并纳入 CookieCloud 凭据范围"
+          },
+          {
+            "path": "/api/plugin-runtime/http/sites",
+            "method": "DELETE",
+            "reason": "删除自定义站点地址"
           }
         ],
         "network": [
-          {"origin": "https://52pt.site", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 52PT 执行签到与登录请求"},
-          {"origin": "https://pt.btschool.club", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 BTSchool 执行签到与登录请求"},
-          {"origin": "https://ptchdbits.co", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 CHDBits 执行签到与登录请求"},
-          {"origin": "https://haidan.cc", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 HaiDan 执行签到与登录请求"},
-          {"origin": "https://club.hares.top", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 Hares 执行签到与登录请求"},
-          {"origin": "https://hdarea.club", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 HDArea 执行签到与登录请求"},
-          {"origin": "https://hdchina.org", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 HDChina 执行签到与登录请求"},
-          {"origin": "https://hdcity.city", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 HDCity 执行签到与登录请求"},
-          {"origin": "https://hdsky.me", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 HDSky 执行签到与登录请求"},
-          {"origin": "https://pt.hdupt.com", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 HDUPT 执行签到与登录请求"},
-          {"origin": "https://kp.m-team.cc", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 M-Team 执行签到与登录请求"},
-          {"origin": "https://v6.nexushd.org", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 NexusHD 执行签到与登录请求"},
-          {"origin": "https://open.cd", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 OpenCD 执行签到与登录请求"},
-          {"origin": "https://pterclub.com", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 PTerClub 执行签到与登录请求"},
-          {"origin": "https://pttime.org", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 PTTime 执行签到与登录请求"},
-          {"origin": "https://ptzone.xyz", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 PTZONE 执行签到与登录请求"},
-          {"origin": "https://rousi.pro", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 Rousi Pro 执行签到与登录请求"},
-          {"origin": "https://tjupt.org", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 TJUPT 执行签到与登录请求"},
-          {"origin": "https://totheglory.im", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 TTG 执行签到与登录请求"},
-          {"origin": "https://u2.dmhy.org", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 U2 执行签到与登录请求"},
-          {"origin": "https://yemapt.org", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 YemaPT 执行签到与登录请求"},
-          {"origin": "https://zhuque.in", "methods": ["GET", "POST"], "proxy_mode": "system", "reason": "对 ZHUQUE 执行签到与登录请求"}
+          {
+            "origin": "https://52pt.site",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 52PT 执行签到与登录请求"
+          },
+          {
+            "origin": "https://pt.btschool.club",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 BTSchool 执行签到与登录请求"
+          },
+          {
+            "origin": "https://ptchdbits.co",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 CHDBits 执行签到与登录请求"
+          },
+          {
+            "origin": "https://haidan.cc",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 HaiDan 执行签到与登录请求"
+          },
+          {
+            "origin": "https://club.hares.top",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 Hares 执行签到与登录请求"
+          },
+          {
+            "origin": "https://hdarea.club",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 HDArea 执行签到与登录请求"
+          },
+          {
+            "origin": "https://hdchina.org",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 HDChina 执行签到与登录请求"
+          },
+          {
+            "origin": "https://hdcity.city",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 HDCity 执行签到与登录请求"
+          },
+          {
+            "origin": "https://hdsky.me",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 HDSky 执行签到与登录请求"
+          },
+          {
+            "origin": "https://pt.hdupt.com",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 HDUPT 执行签到与登录请求"
+          },
+          {
+            "origin": "https://kp.m-team.cc",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 M-Team 执行签到与登录请求"
+          },
+          {
+            "origin": "https://v6.nexushd.org",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 NexusHD 执行签到与登录请求"
+          },
+          {
+            "origin": "https://open.cd",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 OpenCD 执行签到与登录请求"
+          },
+          {
+            "origin": "https://pterclub.com",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 PTerClub 执行签到与登录请求"
+          },
+          {
+            "origin": "https://pttime.org",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 PTTime 执行签到与登录请求"
+          },
+          {
+            "origin": "https://ptzone.xyz",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 PTZONE 执行签到与登录请求"
+          },
+          {
+            "origin": "https://rousi.pro",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 Rousi Pro 执行签到与登录请求"
+          },
+          {
+            "origin": "https://tjupt.org",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 TJUPT 执行签到与登录请求"
+          },
+          {
+            "origin": "https://totheglory.im",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 TTG 执行签到与登录请求"
+          },
+          {
+            "origin": "https://u2.dmhy.org",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 U2 执行签到与登录请求"
+          },
+          {
+            "origin": "https://yemapt.org",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 YemaPT 执行签到与登录请求"
+          },
+          {
+            "origin": "https://zhuque.in",
+            "methods": [
+              "GET",
+              "POST"
+            ],
+            "proxy_mode": "system",
+            "reason": "对 ZHUQUE 执行签到与登录请求"
+          }
         ]
       },
       "tags": [

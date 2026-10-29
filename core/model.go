@@ -19,8 +19,9 @@ const AllSites = "all"
 const HistoryDays = 14
 
 // Site 为一个待签到/登录的站点实例。
-// 凭据二选一：Cookie 直接填入配置，或在宿主“托管凭据”界面创建绑定后填入
-// CredentialRef 由 Broker 注入，二者都为空时任务会报告未配置凭据。
+// 凭据三选一（优先会话）：Cookie 直填进受管会话（Session）、宿主“托管凭据”
+// 界面创建的绑定引用（CredentialRef）、或直接填入配置（Cookie）。三者都为空
+// 时任务会报告未配置凭据。
 type Site struct {
 	ID            string `json:"id"`
 	Key           string `json:"key"` // 内置处理器预设键，"" 表示通用 NexusPHP attendance
@@ -28,6 +29,7 @@ type Site struct {
 	URL           string `json:"url"`
 	Cookie        string `json:"cookie"`
 	CredentialRef string `json:"credential_ref"`
+	Session       string `json:"session"` // 受管 Cookie 会话名（http-sessions-v1）；空则按站点自动生成
 	UA            string `json:"ua"`
 	Timeout       int    `json:"timeout"` // 秒，0 使用默认值
 	Apikey        string `json:"apikey"`  // Rousi Pro 个人 API Key
@@ -131,12 +133,36 @@ func (c Config) ResolveSiteIDs(selected []string) []string {
 	return out
 }
 
+// SessionName 返回站点的受管 Cookie 会话名；未配置时按站点 ID 自动生成。
+// 会话名规则与 http-sessions-v1 一致：字母/数字开头，可含 . _ -。
+func (s Site) SessionName() string {
+	if s.Session != "" {
+		return s.Session
+	}
+	name := s.ID
+	if name == "" {
+		name = "default"
+	}
+	for i, c := range name {
+		if c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || c >= '0' && c <= '9' {
+			continue
+		}
+		if i == 0 || c != '.' && c != '_' && c != '-' {
+			name = name[:i] + "x" + name[i+1:]
+		}
+	}
+	if len(name) > 64 {
+		name = name[:64]
+	}
+	return name
+}
+
 // siteToMap 将站点转为与 UI/存储一致的 JSON 对象（字段名对应原 struct tag）。
 func siteToMap(s Site) map[string]any {
 	return map[string]any{
 		"id": s.ID, "key": s.Key, "name": s.Name, "url": s.URL,
-		"cookie": s.Cookie, "credential_ref": s.CredentialRef, "ua": s.UA,
-		"timeout": s.Timeout, "apikey": s.Apikey, "token": s.Token,
+		"cookie": s.Cookie, "credential_ref": s.CredentialRef, "session": s.Session,
+		"ua": s.UA, "timeout": s.Timeout, "apikey": s.Apikey, "token": s.Token,
 		"custom": s.Custom,
 	}
 }
@@ -195,6 +221,7 @@ func DecodeConfig(raw pluginjson.Raw) (Config, error) {
 			URL:           pluginjson.Text(pluginjson.Field(entry, "url")),
 			Cookie:        pluginjson.Text(pluginjson.Field(entry, "cookie")),
 			CredentialRef: pluginjson.Text(pluginjson.Field(entry, "credential_ref")),
+			Session:       pluginjson.Text(pluginjson.Field(entry, "session")),
 			UA:            pluginjson.Text(pluginjson.Field(entry, "ua")),
 			Timeout:       pluginjson.Int(pluginjson.Field(entry, "timeout")),
 			Apikey:        pluginjson.Text(pluginjson.Field(entry, "apikey")),

@@ -19,8 +19,16 @@ const imports = {
   dian115: {
     host_call(ptr, size) {
       const rpc = JSON.parse(Buffer.from(bytes().slice(ptr, ptr + size)).toString())
+      if (rpc.method === 'host.capabilities') {
+        hostResponse = encode({ result: { features: { http_sessions_v1: true, http_sites_v1: true, credential_fields_v1: true } } })
+        return hostResponse.length
+      }
       assert.equal(rpc.method, 'host.call')
       const { method, path, headers = {}, body_base64 } = rpc.params
+      if (path === '/api/plugin-runtime/http/cookiecloud' && method === 'GET') {
+        hostResponse = encode({ result: { status: 200, body_base64: encode({ data: { revision: '', domains: [] } }).toString('base64') } })
+        return hostResponse.length
+      }
       assert.ok(path.startsWith('/api/plugin-runtime/storage/'), 'unexpected non-storage side effect')
       let response
       if (method === 'GET') {

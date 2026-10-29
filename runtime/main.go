@@ -46,7 +46,7 @@ func (broker) Call(method string, params map[string]any) (pluginjson.Raw, error)
 
 var inputBuffer, outputBuffer []byte
 var hostClient = host.Client{Caller: broker{}}
-var service = app.Service{Store: hostClient, Broker: hostClient}
+var service = app.Service{Store: hostClient, Broker: hostClient, HostClient: &hostClient}
 
 //go:wasmexport dian115_alloc
 func allocate(size uint32) uint32 {
@@ -81,6 +81,10 @@ func dispatch(raw []byte) (any, error) {
 	case "runtime.initialize":
 		if pluginjson.Text(pluginjson.Field(params, "protocol")) != "dian115:wasm@1" {
 			return nil, errors.New("unsupported protocol")
+		}
+		// 启动时探测宿主能力，供 UI 与凭据入口决策；失败不阻塞初始化。
+		if features, err := hostClient.Capabilities(); err == nil {
+			service.Features = features
 		}
 		return map[string]any{"ready": true, "protocol": "dian115:wasm@1"}, nil
 	case "runtime.shutdown":

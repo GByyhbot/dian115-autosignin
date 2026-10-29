@@ -28,6 +28,10 @@ type Store interface {
 type Service struct {
 	Store  Store
 	Broker adapters.Broker
+	// HostClient 提供 http-sessions-v1 会话管理；由 runtime 注入 host.Client。
+	HostClient *host.Client
+	// Features 为启动时探测的宿主能力（features 对象），供 UI 与凭据入口决策。
+	Features pluginjson.Raw
 }
 
 // SiteResult 单站点一次动作的结果记录。
@@ -69,7 +73,7 @@ const (
 	keyConfig  = "config"
 	keyRuntime = "runtime"
 	keyBeat    = "heartbeat"
-	version    = "1.2.0"
+	version    = "1.3.0"
 )
 
 // RunReport 动作返回的摘要。
@@ -166,6 +170,15 @@ func (s Service) state(raw pluginjson.Raw) (any, error) {
 		"live_execution":  true,
 		"version":         version,
 	}
+	if s.Features != nil {
+		state["features"] = decodeFeatures(s.Features)
+	}
+	if pluginjson.Bool(pluginjson.Field(s.Features, "http_sessions_v1")) {
+		// 会话能力可用：把 CookieCloud 概况一并带上（供 UI 一键导入按钮显示）。
+		if overview, err := s.cookiecloudOverview(); err == nil {
+			state["cookiecloud"] = overview
+		}
+	}
 	b, _ := pluginjson.Encode(state)
 	digest := sha256.Sum256(b)
 	etag := `"` + hex.EncodeToString(digest[:]) + `"`
@@ -192,6 +205,45 @@ func (s Service) heartbeat() (map[string]any, error) {
 
 func failed(err error) map[string]any {
 	return map[string]any{"status": "failed", "message": err.Error()}
+}
+
+// decodeFeatures 把宿主 capabilities features 转成 UI 可读的对象。
+func decodeFeatures(features pluginjson.Raw) map[string]any {
+	out := map[string]any{}
+	for key, value := range pluginjson.Fields(features) {
+		out[key] = pluginjson.Bool(value)
+	}
+	return out
+}
+
+// cookiecloudOverview 读取本地 CookieCloud 概况；宿主未配置时返回 nil。
+func (s Service) cookiecloudOverview() (map[string]any, error) {
+	if s.HostClient == nil || s.Broker == nil {
+		return nil, errors.New("HTTP session client unavailable")
+	}
+	client := &adapters.Client{Broker: s.Broker, Store: s.Store, HostClient: s.HostClient}
+	raw, err := client.CookieCloudOverview()
+	if err != nil {
+		return nil, err
+	}
+	revision := pluginjson.Text(pluginjson.Field(raw, "revision"))
+	domains := make([]any, 0)
+	for position := 0; ; position++ {
+		entry := pluginjson.Index(pluginjson.Field(raw, "domains"), position)
+		if entry == nil {
+			break
+		}
+		domains = append(domains, map[string]any{
+			"domain":      pluginjson.Text(pluginjson.Field(entry, "domain")),
+			"cookie_count": pluginjson.Int(pluginjson.Field(entry, "cookie_count")),
+		})
+	}
+	return map[string]any{"revision": revision, "domains": domains}, nil
+}
+
+// sessionClient 返回配置了 HostClient 的站点请求客户端。
+func (s Service) sessionClient() *adapters.Client {
+	return &adapters.Client{Broker: s.Broker, Store: s.Store, HostClient: s.HostClient}
 }
 
 func (s Service) action(id string, raw pluginjson.Raw) (any, error) {
@@ -224,7 +276,28 @@ func (s Service) action(id string, raw pluginjson.Raw) (any, error) {
 		if err = s.Store.Write(keyConfig, document, rev, key); err != nil {
 			return failed(err), nil
 		}
-		return map[string]any{"status": "succeeded", "message": "配置已保存"}, nil
+		// 自定义站点同步登记到宿主 sites 接口（纳入 CookieCloud 凭据范围）。
+		// 仅新增/更新；删除由宿主 sites 管理界面或 DELETE 接口处理，避免误删。
+		warnings := []string{}
+		if s.sessionCapable() {
+			for _, site := range c.Sites {
+				if !site.Custom || strings.TrimSpace(site.URL) == "" {
+					continue
+				}
+				syncKey := "sync-site-" + site.ID + "-" + id
+				if len(syncKey) > 128 {
+					syncKey = syncKey[:128]
+				}
+				if _, err := s.HostClient.SaveSite(site.ID, site.URL, site.Name, syncKey); err != nil {
+					warnings = append(warnings, fmt.Sprintf("自定义站点 %s 登记失败：%v", site.Name, err))
+				}
+			}
+		}
+		result := map[string]any{"status": "succeeded", "message": "配置已保存"}
+		if len(warnings) > 0 {
+			result["message"] = "配置已保存，但有自定义站点未登记到宿主 CookieCloud 范围：" + strings.Join(warnings, "；")
+		}
+		return result, nil
 	case "sign-now":
 		input := pluginjson.Field(raw, "input")
 		typ := pluginjson.Text(pluginjson.Field(input, "type"))
@@ -251,9 +324,92 @@ func (s Service) action(id string, raw pluginjson.Raw) (any, error) {
 			return failed(err), nil
 		}
 		return map[string]any{"status": "succeeded", "message": "历史记录已清空"}, nil
+	case "set-site-cookie":
+		return s.actionSetSiteCookie(id, raw)
+	case "import-cookiecloud":
+		return s.actionImportCookieCloud(id, raw)
+	case "cookiecloud-overview":
+		if !s.sessionCapable() {
+			return failed(errors.New("宿主未启用 http-sessions-v1 会话能力（需 DIAN115 >= 5.0.54）")), nil
+		}
+		overview, err := s.cookiecloudOverview()
+		if err != nil {
+			return failed(err), nil
+		}
+		return map[string]any{"status": "succeeded", "message": "CookieCloud 概况已读取", "cookiecloud": overview}, nil
 	default:
 		return failed(errors.New("unknown action")), nil
 	}
+}
+
+// sessionCapable 判断宿主是否具备 http-sessions-v1 能力。
+func (s Service) sessionCapable() bool {
+	return s.HostClient != nil && pluginjson.Bool(pluginjson.Field(s.Features, "http_sessions_v1"))
+}
+
+// actionSetSiteCookie 把用户直填的 Cookie 持久化到站点受管会话。
+func (s Service) actionSetSiteCookie(id string, raw pluginjson.Raw) (map[string]any, error) {
+	if !s.sessionCapable() {
+		return failed(errors.New("宿主未启用 http-sessions-v1 会话能力（需 DIAN115 >= 5.0.54），请升级宿主或改用托管凭据/配置直填 Cookie")), nil
+	}
+	input := pluginjson.Field(raw, "input")
+	siteID := pluginjson.Text(pluginjson.Field(input, "site_id"))
+	cookie := pluginjson.Text(pluginjson.Field(input, "cookie"))
+	if strings.TrimSpace(cookie) == "" {
+		return failed(errors.New("Cookie 不能为空")), nil
+	}
+	c, _, err := s.config()
+	if err != nil {
+		return failed(err), nil
+	}
+	site, ok := c.SiteByID(siteID)
+	if !ok {
+		return failed(errors.New("站点不存在：" + siteID)), nil
+	}
+	if strings.TrimSpace(site.URL) == "" {
+		return failed(errors.New("该站点缺少 URL，请先在站点列表填写站点地址")), nil
+	}
+	idem := "set-cookie-" + id
+	if len(idem) < 16 {
+		idem += "-" + time.Now().Format("150405000")
+	}
+	client := s.sessionClient()
+	if _, err := client.SetSiteCookie(site, cookie, idem); err != nil {
+		return failed(err), nil
+	}
+	return map[string]any{"status": "succeeded", "message": "Cookie 已保存到站点会话（签到请求将自动携带）"}, nil
+}
+
+// actionImportCookieCloud 从本地 CookieCloud 按站点域名导入 Cookie 到该站会话。
+func (s Service) actionImportCookieCloud(id string, raw pluginjson.Raw) (map[string]any, error) {
+	if !s.sessionCapable() {
+		return failed(errors.New("宿主未启用 http-sessions-v1 会话能力（需 DIAN115 >= 5.0.54）")), nil
+	}
+	input := pluginjson.Field(raw, "input")
+	siteID := pluginjson.Text(pluginjson.Field(input, "site_id"))
+	c, _, err := s.config()
+	if err != nil {
+		return failed(err), nil
+	}
+	site, ok := c.SiteByID(siteID)
+	if !ok {
+		return failed(errors.New("站点不存在：" + siteID)), nil
+	}
+	if strings.TrimSpace(site.URL) == "" {
+		return failed(errors.New("该站点缺少 URL，无法确定 CookieCloud 域名")), nil
+	}
+	idem := "import-cc-" + id
+	if len(idem) < 16 {
+		idem += "-" + time.Now().Format("150405000")
+	}
+	client := s.sessionClient()
+	rawResult, err := client.ImportCookieCloud(site, idem)
+	if err != nil {
+		return failed(err), nil
+	}
+	imported := pluginjson.Int(pluginjson.Field(rawResult, "imported"))
+	total := pluginjson.Int(pluginjson.Field(rawResult, "total_cookies"))
+	return map[string]any{"status": "succeeded", "message": fmt.Sprintf("已从 CookieCloud 导入 %d 条 Cookie（会话共 %d 条）", imported, total), "imported": imported, "total_cookies": total}, nil
 }
 
 // Tick 供 resident 循环每分钟调用，按调度执行签到/登录并刷新心跳。
@@ -497,7 +653,16 @@ func (s Service) runSite(ctx context.Context, c core.Config, id, typ string) Sit
 	if !ok {
 		return SiteResult{Site: id, SiteID: id, Message: "站点不存在"}
 	}
-	client := &adapters.Client{Broker: s.Broker, Store: s.Store}
+	// 凭据引导：会话模式下站点没有任何凭据来源时直接提示，不发无效请求。
+	if strings.TrimSpace(site.Cookie) == "" && strings.TrimSpace(site.CredentialRef) == "" {
+		if s.sessionCapable() && strings.TrimSpace(site.URL) != "" {
+			return SiteResult{Site: site.Name, SiteID: id, Message: "未配置凭据：请在站点“凭据”操作中直填 Cookie 或从 CookieCloud 导入（会话 " + site.SessionName() + "）"}
+		}
+		if strings.TrimSpace(site.URL) == "" {
+			return SiteResult{Site: site.Name, SiteID: id, Message: "站点缺少 URL"}
+		}
+	}
+	client := s.sessionClient()
 	handler := adapters.LookupHandler(site.Key)
 	if handler == nil {
 		handler = genericHandler()

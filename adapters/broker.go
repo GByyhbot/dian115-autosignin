@@ -40,6 +40,9 @@ var DefaultCaptchaReader CaptchaReader
 type Client struct {
 	Broker Broker
 	Store  Store
+	// HostClient 提供 http-sessions-v1 会话管理（CookieCloud 导入、直填 Cookie、
+	// 自定义站点）。为 nil 时会话相关方法返回明确错误，不影响普通请求。
+	HostClient *host.Client
 }
 
 func (c *Client) do(ctx context.Context, req host.Request) (*host.Response, error) {
@@ -53,7 +56,8 @@ func (c *Client) do(ctx context.Context, req host.Request) (*host.Response, erro
 	return &res, nil
 }
 
-// request 构造并发送请求：凭据优先使用托管凭据引用，否则直传 Cookie。
+// request 构造并发送请求。凭据优先级（http-sessions-v1）：
+// 受管 Cookie 会话（Session） > 托管凭据引用（CredentialRef） > 直传 Cookie。
 func (c *Client) request(ctx context.Context, method, rawURL string, s core.Site, timeout int, headers map[string]string, body []byte, contentType string) (*host.Response, error) {
 	if timeout <= 0 {
 		timeout = 20
@@ -70,8 +74,15 @@ func (c *Client) request(ctx context.Context, method, rawURL string, s core.Site
 	if _, ok := h["user-agent"]; !ok && s.UA != "" {
 		h["user-agent"] = s.UA
 	}
-	req := host.Request{Method: method, Path: rawURL, Headers: h}
-	if s.CredentialRef != "" {
+	req := host.Request{
+		Method:    method,
+		Path:      rawURL,
+		Headers:   h,
+		TimeoutMS: timeout * 1000,
+	}
+	if s.SessionName() != "" && s.CredentialRef == "" {
+		req.Session = s.SessionName()
+	} else if s.CredentialRef != "" {
 		req.CredentialRef = s.CredentialRef
 	} else if s.Cookie != "" {
 		h["cookie"] = s.Cookie
@@ -275,4 +286,106 @@ func randInt(n int) int {
 		return 0
 	}
 	return rand.Intn(n)
+}
+
+// ---------------------------------------------------------------------------
+// http-sessions-v1 会话管理（直填 Cookie / CookieCloud 导入 / 自定义站点）
+// ---------------------------------------------------------------------------
+
+// hasSession 返回会话能力是否可用。
+func (c *Client) hasSession() (*host.Client, error) {
+	if c.HostClient == nil {
+		return nil, errors.New("宿主未启用 http-sessions-v1 会话能力（需 DIAN115 >= 5.0.54），请升级宿主或改用托管凭据/直填 Cookie")
+	}
+	return c.HostClient, nil
+}
+
+// SetSiteCookie 把用户直填的 Cookie header 持久化到该站受管会话。
+// 幂等键由调用方提供（重试复用同一键）。
+func (c *Client) SetSiteCookie(s core.Site, cookie, idempotency string) (pluginjson.Raw, error) {
+	hc, err := c.hasSession()
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(s.URL) == "" {
+		return nil, errors.New("站点缺少 URL，无法确定 Cookie 作用域")
+	}
+	return hc.SetCookieHeader(s.URL, s.SessionName(), cookie, idempotency)
+}
+
+// ImportCookieCloud 从本地 CookieCloud 按站点域名导入 Cookie 到该站受管会话。
+func (c *Client) ImportCookieCloud(s core.Site, idempotency string) (pluginjson.Raw, error) {
+	hc, err := c.hasSession()
+	if err != nil {
+		return nil, err
+	}
+	domain := siteDomain(s)
+	if domain == "" {
+		return nil, errors.New("无法从站点 URL 提取 CookieCloud 域名")
+	}
+	return hc.ImportCookieCloud(s.SessionName(), []string{domain}, idempotency)
+}
+
+// CookieCloudOverview 读取本地 CookieCloud 概况（域名、数量、revision）。
+func (c *Client) CookieCloudOverview() (pluginjson.Raw, error) {
+	hc, err := c.hasSession()
+	if err != nil {
+		return nil, err
+	}
+	return hc.CookieCloud()
+}
+
+// SiteCookieCount 读取该站会话已保存的 Cookie 数量；会话不存在时返回 0。
+func (c *Client) SiteCookieCount(s core.Site) (int, error) {
+	hc, err := c.hasSession()
+	if err != nil {
+		return 0, err
+	}
+	if strings.TrimSpace(s.URL) == "" {
+		return 0, nil
+	}
+	raw, err := hc.SiteCookies(s.URL, s.SessionName())
+	if err != nil {
+		return 0, err
+	}
+	return pluginjson.Int(pluginjson.Field(raw, "total_cookies")), nil
+}
+
+// siteDomain 提取站点 URL 的注册主域名（host 去 www.），供 CookieCloud 选择。
+func siteDomain(s core.Site) string {
+	host := core.HostOf(s.URL)
+	if host == "" {
+		return ""
+	}
+	return host
+}
+
+// SaveCustomSite 把自定义站点地址登记到宿主 sites 接口（纳入 CookieCloud 范围）。
+func (c *Client) SaveCustomSite(id, url, label, idempotency string) (pluginjson.Raw, error) {
+	hc, err := c.hasSession()
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(id) == "" || strings.TrimSpace(url) == "" {
+		return nil, errors.New("自定义站点需要 id 与 url")
+	}
+	return hc.SaveSite(id, url, label, idempotency)
+}
+
+// DeleteCustomSite 删除宿主 sites 接口中的自定义站点地址。
+func (c *Client) DeleteCustomSite(id, idempotency string) (pluginjson.Raw, error) {
+	hc, err := c.hasSession()
+	if err != nil {
+		return nil, err
+	}
+	return hc.DeleteSite(id, idempotency)
+}
+
+// ListSites 读取宿主当前保存的站点地址列表。
+func (c *Client) ListSites() (pluginjson.Raw, error) {
+	hc, err := c.hasSession()
+	if err != nil {
+		return nil, err
+	}
+	return hc.Sites()
 }

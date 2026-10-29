@@ -55,8 +55,17 @@
         <label><input type="checkbox" v-model="allSign" /> 全部签到</label>
         <label><input type="checkbox" v-model="allLogin" /> 全部登录保号</label>
       </div>
-      <div class="cred-tip">
-        托管凭据（推荐）：插件中心 → 本安装实例 → 托管凭据（Secret Bindings）→ 按站点域名创建 Cookie 绑定，把返回的 <code>cred_xxx</code> 填入右侧「托管凭据引用」列；与直填 Cookie 二选一、优先托管凭据。自定义站点不在内置清单内，需直填 Cookie。
+      <div v-if="!sessionCapable" class="cred-tip warn">
+        ⚠ 宿主未启用 HTTP 会话能力（http-sessions-v1，需 DIAN115 ≥ 5.0.54）。当前只能用「托管凭据」或「配置直填 Cookie」签到，无法使用 CookieCloud 一键同步。
+      </div>
+      <div class="cred-tip" :class="{ muted: !sessionCapable }">
+        <template v-if="sessionCapable">
+          凭据（推荐）：每个站点用「填 Cookie」直填一次，或「导入 CC」从宿主 CookieCloud 按域名同步；宿主加密保存并按站点会话自动携带，无需再建 Secret Binding。
+        </template>
+        <template v-else>
+          托管凭据（推荐）：插件中心 → 本安装实例 → 托管凭据（Secret Bindings）→ 按站点域名创建 Cookie 绑定，把返回的 <code>cred_xxx</code> 填入「托管凭据引用」列；与直填 Cookie 二选一、优先托管凭据。
+        </template>
+        <span v-if="ccSummary" class="cc-summary">CookieCloud：{{ ccSummary }}</span>
       </div>
       <n-data-table
         :columns="columns"
@@ -73,12 +82,24 @@
       <n-data-table :columns="historyColumns" :data="historyRows" :bordered="false" :max-height="360" size="small" :row-key="(row: any) => row.key" />
       <n-empty v-if="historyRows.length === 0" description="暂无历史记录" style="padding: 24px 0" />
     </n-card>
+
+    <n-modal v-model:show="cookieModal" preset="card" title="填写站点 Cookie" style="width: 520px" :mask-closable="false">
+      <div class="modal-body">
+        <div class="modal-site">{{ cookieTarget?.name }}（{{ cookieTarget?.url }}）</div>
+        <div class="hint">Cookie 将加密保存到该站点的受管会话，签到请求自动携带；可粘贴浏览器 DevTools 里的完整 Cookie 头（如 a=1; b=2）。</div>
+        <n-input v-model:value="cookieText" type="textarea" :rows="5" placeholder="name=value; name2=value2" />
+      </div>
+      <template #footer>
+        <n-button size="small" @click="cookieModal = false">取消</n-button>
+        <n-button size="small" type="primary" :disabled="!cookieText.trim()" @click="submitCookie">保存</n-button>
+      </template>
+    </n-modal>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, h, onMounted, ref } from 'vue'
-import { NButton, NCard, NDataTable, NEmpty, NForm, NFormItemGi, NGrid, NInput, NInputNumber, NSelect, NSwitch, NTag, useMessage } from 'naive-ui'
+import { NButton, NCard, NDataTable, NEmpty, NForm, NFormItemGi, NGrid, NInput, NInputNumber, NModal, NSelect, NSwitch, NTag, useMessage } from 'naive-ui'
 import { emptyConfig, PRESETS, type Bridge, type Config, type SiteRow, type State } from './types'
 
 const props = defineProps<{ api: Bridge }>()
@@ -96,6 +117,42 @@ const heartbeatStatus = computed(() => snapshot.value.heartbeat?.status || '—'
 const enabledCount = computed(() => snapshot.value.config.sites.length)
 const hasHistory = computed(() => historyRows.value.length > 0)
 const liveNotice = computed(() => snapshot.value.live_execution)
+const sessionCapable = computed(() => !!snapshot.value.features?.http_sessions_v1)
+const ccSummary = computed(() => {
+  const cc = snapshot.value.cookiecloud
+  if (!cc?.domains?.length) return '未配置'
+  return `${cc.domains.length} 个域名 / ${cc.domains.reduce((n, d) => n + d.cookie_count, 0)} 条`
+})
+
+// 直填 Cookie 弹窗
+const cookieModal = ref(false)
+const cookieTarget = ref<SiteRow | null>(null)
+const cookieText = ref('')
+async function openCookieModal(row: SiteRow) {
+  cookieTarget.value = row
+  cookieText.value = ''
+  cookieModal.value = true
+}
+async function submitCookie() {
+  if (!cookieTarget.value) return
+  const res = await props.api.invokeAction('set-site-cookie', { site_id: cookieTarget.value.id, cookie: cookieText.value })
+  if (res.result?.status === 'succeeded') { message.success(res.result.message || 'Cookie 已保存'); cookieModal.value = false }
+  else message.warning(res.result?.message || '保存失败')
+}
+
+// CookieCloud 按域名导入
+async function importCC(row: SiteRow) {
+  if (!row.url) { message.warning('该站点缺少 URL，请先填写站点地址'); return }
+  try {
+    const res = await props.api.invokeAction('import-cookiecloud', { site_id: row.id })
+    if (res.result?.status === 'succeeded') {
+      message.success(res.result.message || '导入成功')
+      await refresh()
+    } else message.warning(res.result?.message || '导入失败')
+  } catch (e: any) {
+    message.error('导入失败：' + (e?.message || e))
+  }
+}
 
 async function refresh() {
   busy.value = true
@@ -168,6 +225,7 @@ function addSite(presetKey = '') {
     url: preset ? `https://${preset.domain}` : '',
     cookie: '',
     credential_ref: '',
+    session: '',
     ua: '',
     timeout: 20,
     apikey: '',
@@ -238,12 +296,20 @@ const columns = [
   },
   { title: 'URL', key: 'url', minWidth: 200, render: (row: SiteRow) => h(NInput, { value: row.url, size: 'small', placeholder: 'https://站点域名', onUpdateValue: (v: string) => { row.url = v } }) },
   {
-    title: 'Cookie', key: 'cookie', minWidth: 220,
-    render: (row: SiteRow) => h(NInput, { value: row.cookie, size: 'small', type: 'password', showPasswordOn: 'click', placeholder: '站点 Cookie（与托管凭据二选一）', onUpdateValue: (v: string) => { row.cookie = v } }),
+    title: '凭据', key: 'credential', minWidth: 170,
+    render: (row: SiteRow) => {
+      if (sessionCapable.value) {
+        return h('div', { style: 'display:flex;gap:6px' }, [
+          h(NButton, { size: 'tiny', type: 'primary', ghost: true, onClick: () => openCookieModal(row) }, { default: () => '填 Cookie' }),
+          h(NButton, { size: 'tiny', type: 'info', ghost: true, disabled: !row.url, onClick: () => importCC(row) }, { default: () => '导入 CC' }),
+        ])
+      }
+      return h(NInput, { value: row.cookie, size: 'small', type: 'password', showPasswordOn: 'click', placeholder: '站点 Cookie（与托管凭据二选一）', onUpdateValue: (v: string) => { row.cookie = v } })
+    },
   },
   {
-    title: '托管凭据引用', key: 'credential_ref', minWidth: 160,
-    render: (row: SiteRow) => h(NInput, { value: row.credential_ref, size: 'small', placeholder: 'cred_xxx（推荐）', onUpdateValue: (v: string) => { row.credential_ref = v } }),
+    title: '托管凭据引用', key: 'credential_ref', minWidth: 150,
+    render: (row: SiteRow) => h(NInput, { value: row.credential_ref, size: 'small', placeholder: 'cred_xxx（旧宿主用）', onUpdateValue: (v: string) => { row.credential_ref = v } }),
   },
   {
     title: 'Token/API Key', key: 'token', minWidth: 140,
@@ -311,5 +377,10 @@ onMounted(refresh)
 .all-row { margin-bottom: 8px; font-size: 12px; color: var(--n-text-color-3); display: flex; gap: 12px; }
 .all-label { margin-right: 4px; }
 .cred-tip { margin-bottom: 8px; font-size: 12px; color: var(--n-text-color-3); line-height: 1.6; }
+.cred-tip.warn { color: #d03050; }
+.cred-tip.muted { opacity: 0.75; }
 .cred-tip code { background: var(--n-action-color); padding: 0 4px; border-radius: 3px; }
+.cc-summary { margin-left: 12px; color: #18a058; }
+.modal-body { display: flex; flex-direction: column; gap: 8px; }
+.modal-site { font-weight: 600; font-size: 13px; }
 </style>

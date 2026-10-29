@@ -5,6 +5,7 @@ export interface SiteRow {
   url: string
   cookie: string
   credential_ref: string
+  session: string // 受管 Cookie 会话名（5.0.54+），空则按站点 ID 自动生成
   ua: string
   timeout: number
   apikey: string // Rousi Pro API Key
@@ -34,6 +35,8 @@ export interface RuntimeState {
   history: History
 }
 export interface Heartbeat { at: string; enabled_sites: number; status: string }
+export interface CookieCloudDomain { domain: string; cookie_count: number }
+export interface CookieCloudOverview { revision?: string; domains?: CookieCloudDomain[] }
 export interface State {
   config: Config
   config_revision: string
@@ -42,6 +45,8 @@ export interface State {
   version: string
   heartbeat?: Heartbeat
   runtime?: RuntimeState
+  features?: Record<string, boolean>
+  cookiecloud?: CookieCloudOverview
 }
 export interface Report {
   type: string
@@ -54,7 +59,7 @@ export interface Report {
   message: string
   results: HistoryResult[]
 }
-export interface Result { status: 'succeeded' | 'failed' | 'accepted' | 'skipped'; message?: string; report?: Report }
+export interface Result { status: 'succeeded' | 'failed' | 'accepted' | 'skipped'; message?: string; report?: Report; imported?: number; total_cookies?: number; cookiecloud?: CookieCloudOverview }
 export interface Bridge {
   getState(view?: string): Promise<{ state?: State; etag?: string; not_modified?: boolean }>
   invokeAction(action: string, input?: unknown): Promise<{ result?: Result }>

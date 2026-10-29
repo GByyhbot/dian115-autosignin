@@ -1,5 +1,18 @@
 # 发布记录
 
+## v1.3.0（2026-10-29）
+
+- **适配 DIAN115 5.0.54 http-sessions-v1 新协议**
+  - 受管 Cookie 会话：签到请求自动携带站点会话 Cookie，宿主加密持久化并按账号隔离
+  - **CookieCloud 一键同步**：复用宿主已配置的 CookieCloud，按站点域名导入 Cookie 到对应会话（无需再逐站手动填/建 Secret Binding）
+  - **直填 Cookie**：站点卡片新增「填 Cookie」，保存到受管会话后自动随签到请求携带
+  - **自定义站点**：自定义站点保存时同步登记到宿主 sites 接口，纳入 CookieCloud 凭据范围
+  - 启动时探测宿主能力（http_sessions_v1 / http_sites_v1），UI 按能力显示凭据入口；宿主 < 5.0.54 自动回退到托管凭据/配置直填
+- 新增 8 条插件 API 权限：cookies GET/PUT/DELETE、cookiecloud GET、cookiecloud/import POST、sites GET/PUT/DELETE
+- 兼容范围仍为 `>=5.0.46 <6.0.0`（页面模式）；5.0.54 起启用全部新能力
+
+SHA-256: `3d4deeea1e90fa04b903cc739b647fcdd1fdb2dee814748aedd5fe36f281ca68`
+
 ## v1.2.0（2026-10-28）
 
 - UI 迁移到官方独立页面模式（ui.mode=page，standalone HTML + connectPluginPage SDK），Module Federation 已废弃移除
