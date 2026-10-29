@@ -75,7 +75,7 @@
         size="small"
         :row-key="(row: any) => row.id"
       />
-      <n-empty v-if="draft.sites.length === 0" description="暂无站点，点击“添加站点”配置签到目标（内置 22 个站点预设，其余站点走通用签到）" style="padding: 24px 0" />
+      <n-empty v-if="draft.sites.length === 0" :description="`暂无站点，点击“添加站点”配置签到目标（常用大站专用处理器 + ${nexusPresets.length} 个 NexusPHP 小站通用签到，其余站点走通用流程）`" style="padding: 24px 0" />
     </n-card>
 
     <n-card size="small" title="历史记录（最近 14 天）" class="card">
@@ -118,6 +118,9 @@ const enabledCount = computed(() => snapshot.value.config.sites.length)
 const hasHistory = computed(() => historyRows.value.length > 0)
 const liveNotice = computed(() => snapshot.value.live_execution)
 const sessionCapable = computed(() => !!snapshot.value.features?.http_sessions_v1)
+const allPresets = computed(() => snapshot.value.presets?.length ? snapshot.value.presets : PRESETS)
+const majorPresets = computed(() => allPresets.value.filter(p => p.group === 'major'))
+const nexusPresets = computed(() => allPresets.value.filter(p => p.group !== 'major'))
 const ccSummary = computed(() => {
   const cc = snapshot.value.cookiecloud
   if (!cc?.domains?.length) return '未配置'
@@ -216,13 +219,16 @@ function genId() {
   return 'site-' + Math.random().toString(36).slice(2, 10)
 }
 
+function siteUrl(p: { homepage?: string; domain: string }) {
+  return p.homepage || `https://${p.domain}`
+}
 function addSite(presetKey = '') {
-  const preset = PRESETS.find(p => p.key === presetKey)
+  const preset = allPresets.value.find(p => p.key === presetKey)
   const row: SiteRow = {
     id: genId(),
     key: preset?.key || '',
     name: preset?.name || '自定义站点',
-    url: preset ? `https://${preset.domain}` : '',
+    url: preset ? siteUrl(preset) : '',
     cookie: '',
     credential_ref: '',
     session: '',
@@ -272,10 +278,17 @@ const allLogin = computed({
 const signActive = (id: string) => draft.value.sign_sites.includes('all') || draft.value.sign_sites.includes(id)
 const loginActive = (id: string) => draft.value.login_sites.includes('all') || draft.value.login_sites.includes(id)
 
-const presetOptions = [
+const presetOptions = computed(() => [
   { label: '通用签到（自定义站点）', value: '' },
-  ...PRESETS.map(p => ({ label: `${p.name}（${p.domain}）`, value: p.key })),
-]
+  {
+    type: 'group', label: `常用大站（${majorPresets.value.length}，专用处理器）`,
+    children: majorPresets.value.map(p => ({ label: `${p.name}（${p.domain}）`, value: p.key })),
+  },
+  {
+    type: 'group', label: `NexusPHP 小站（${nexusPresets.value.length}，通用 attendance 签到）`,
+    children: nexusPresets.value.map(p => ({ label: `${p.name}（${p.domain}）`, value: p.key })),
+  },
+])
 
 const columns = [
   {
@@ -285,12 +298,12 @@ const columns = [
   {
     title: '预设', key: 'key', width: 210,
     render: (row: SiteRow) => h(NSelect, {
-      value: row.key, size: 'small', options: presetOptions,
+      value: row.key, size: 'small', filterable: true, options: presetOptions.value,
       onUpdateValue: (v: string) => {
         row.key = v || ''
-        const p = PRESETS.find(x => x.key === v)
+        const p = allPresets.value.find(x => x.key === v)
         row.custom = !p
-        if (p) { row.name = p.name; if (!row.url) row.url = `https://${p.domain}` }
+        if (p) { row.name = p.name; if (!row.url) row.url = siteUrl(p) }
       },
     }),
   },

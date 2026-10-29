@@ -73,7 +73,7 @@ const (
 	keyConfig  = "config"
 	keyRuntime = "runtime"
 	keyBeat    = "heartbeat"
-	version    = "1.3.0"
+	version    = "1.4.0"
 )
 
 // RunReport 动作返回的摘要。
@@ -169,6 +169,7 @@ func (s Service) state(raw pluginjson.Raw) (any, error) {
 		"mode":            "live",
 		"live_execution":  true,
 		"version":         version,
+		"presets":         presetList(),
 	}
 	if s.Features != nil {
 		state["features"] = decodeFeatures(s.Features)
@@ -179,7 +180,15 @@ func (s Service) state(raw pluginjson.Raw) (any, error) {
 			state["cookiecloud"] = overview
 		}
 	}
-	b, _ := pluginjson.Encode(state)
+	b, err := pluginjson.Encode(state)
+	if err != nil {
+		// 兜底：出现编码器不支持的形状时移除派生字段再编码，保证 ETag 可算。
+		delete(state, "presets")
+		b, err = pluginjson.Encode(state)
+	}
+	if err != nil {
+		return nil, err
+	}
 	digest := sha256.Sum256(b)
 	etag := `"` + hex.EncodeToString(digest[:]) + `"`
 	if pluginjson.Text(pluginjson.Field(raw, "if_none_match")) == etag {
@@ -205,6 +214,18 @@ func (s Service) heartbeat() (map[string]any, error) {
 
 func failed(err error) map[string]any {
 	return map[string]any{"status": "failed", "message": err.Error()}
+}
+
+// presetList 下发全部内置站点预设：major 为常用大站（专用处理器），nexus 为通用 NexusPHP 小站。
+func presetList() []any {
+	out := make([]any, 0, len(core.BuiltinPresets)+len(core.ExtraNexusPresets))
+	for _, p := range core.BuiltinPresets {
+		out = append(out, map[string]any{"key": p.Key, "name": p.Name, "domain": p.Domain, "homepage": p.Homepage, "group": "major"})
+	}
+	for _, p := range core.ExtraNexusPresets {
+		out = append(out, map[string]any{"key": p.Key, "name": p.Name, "domain": p.Domain, "homepage": p.Homepage, "group": "nexus"})
+	}
+	return out
 }
 
 // decodeFeatures 把宿主 capabilities features 转成 UI 可读的对象。

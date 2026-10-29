@@ -3,8 +3,8 @@
   "schema_version": 1,
   "id": "community.dian115-autosignin",
   "name": "站点自动签到",
-  "version": "1.3.0",
-  "description": "按计划自动签到、模拟登录 PT 站点并发送通知，支持 CookieCloud 凭据同步与直填，适配自 MoviePilot autosignin 3.0.3。",
+  "version": "1.4.0",
+  "description": "按计划自动签到、模拟登录 PT 站点并发送通知；内置常用大站专用处理器与 140+ 个 NexusPHP 小站通用签到预设，支持 CookieCloud 凭据同步与直填，站点目录参考 PT-depiler 开源定义。",
   "default_locale": "zh-CN",
   "publisher": {
     "name": "GByyhbot",

@@ -47,6 +47,7 @@ export interface State {
   runtime?: RuntimeState
   features?: Record<string, boolean>
   cookiecloud?: CookieCloudOverview
+  presets?: Preset[]
 }
 export interface Report {
   type: string
@@ -65,31 +66,32 @@ export interface Bridge {
   invokeAction(action: string, input?: unknown): Promise<{ result?: Result }>
   refresh(): Promise<State>
 }
-export interface Preset { key: string; name: string; domain: string }
+export interface Preset { key: string; name: string; domain: string; homepage?: string; group: 'major' | 'nexus' }
 
+// 兜底列表（后端 state.presets 未下发时使用）；完整 166 站由 WASM 运行时下发。
 export const PRESETS: Preset[] = [
-  { key: '52pt', name: '52PT', domain: '52pt.site' },
-  { key: 'btschool', name: '学校（BTSchool）', domain: 'pt.btschool.club' },
-  { key: 'chdbits', name: '彩虹岛（CHDBits）', domain: 'ptchdbits.co' },
-  { key: 'haidan', name: '海胆之家（HaiDan）', domain: 'haidan.cc' },
-  { key: 'hares', name: '白兔（Hares）', domain: 'club.hares.top' },
-  { key: 'hdarea', name: '好大（HDArea）', domain: 'hdarea.club' },
-  { key: 'hdchina', name: '瓷器（HDChina）', domain: 'hdchina.org' },
-  { key: 'hdcity', name: '城市（HDCity）', domain: 'hdcity.city' },
-  { key: 'hdsky', name: '天空（HDSky）', domain: 'hdsky.me' },
-  { key: 'hdupt', name: 'HDUPT', domain: 'pt.hdupt.com' },
-  { key: 'mteam', name: '馒头（M-Team）', domain: 'm-team' },
-  { key: 'nexushd', name: 'NexusHD', domain: 'v6.nexushd.org' },
-  { key: 'opencd', name: '皇后（OpenCD）', domain: 'open.cd' },
-  { key: 'pterclub', name: '猫（PTerClub）', domain: 'pterclub.com' },
-  { key: 'pttime', name: 'PT时间（PTTime）', domain: 'pttime.org' },
-  { key: 'ptzone', name: 'PTZONE', domain: 'ptzone.xyz' },
-  { key: 'rousi', name: 'Rousi Pro', domain: 'rousi.pro' },
-  { key: 'tjupt', name: '北洋（TJUPT）', domain: 'tjupt.org' },
-  { key: 'ttg', name: 'TTG', domain: 'totheglory.im' },
-  { key: 'u2', name: 'U2', domain: 'u2.dmhy.org' },
-  { key: 'yema', name: 'YemaPT', domain: 'yemapt.org' },
-  { key: 'zhuque', name: '朱雀（ZHUQUE）', domain: 'zhuque.in' },
+  { key: '52pt', name: '52PT', domain: '52pt.site', homepage: 'https://52pt.site/', group: 'major' },
+  { key: 'btschool', name: '学校（BTSchool）', domain: 'pt.btschool.club', homepage: 'https://pt.btschool.club/', group: 'major' },
+  { key: 'chdbits', name: '彩虹岛（CHDBits）', domain: 'ptchdbits.co', homepage: 'https://ptchdbits.co/', group: 'major' },
+  { key: 'haidan', name: '海胆之家（HaiDan）', domain: 'haidan.cc', homepage: 'https://haidan.cc/', group: 'major' },
+  { key: 'hares', name: '白兔（Hares）', domain: 'club.hares.top', homepage: 'https://club.hares.top/', group: 'major' },
+  { key: 'hdarea', name: '好大（HDArea）', domain: 'hdarea.club', homepage: 'https://hdarea.club/', group: 'major' },
+  { key: 'hdchina', name: '瓷器（HDChina）', domain: 'hdchina.org', homepage: 'https://hdchina.org/', group: 'major' },
+  { key: 'hdcity', name: '城市（HDCity）', domain: 'hdcity.city', homepage: 'https://hdcity.city/', group: 'major' },
+  { key: 'hdsky', name: '天空（HDSky）', domain: 'hdsky.me', homepage: 'https://hdsky.me/', group: 'major' },
+  { key: 'hdupt', name: 'HDUPT', domain: 'pt.hdupt.com', homepage: 'https://pt.hdupt.com/', group: 'major' },
+  { key: 'mteam', name: '馒头（M-Team）', domain: 'm-team', group: 'major' },
+  { key: 'nexushd', name: 'NexusHD', domain: 'v6.nexushd.org', homepage: 'https://v6.nexushd.org/', group: 'major' },
+  { key: 'opencd', name: '皇后（OpenCD）', domain: 'open.cd', homepage: 'https://open.cd/', group: 'major' },
+  { key: 'pterclub', name: '猫（PTerClub）', domain: 'pterclub.com', homepage: 'https://pterclub.com/', group: 'major' },
+  { key: 'pttime', name: 'PT时间（PTTime）', domain: 'pttime.org', homepage: 'https://pttime.org/', group: 'major' },
+  { key: 'ptzone', name: 'PTZONE', domain: 'ptzone.xyz', homepage: 'https://ptzone.xyz/', group: 'major' },
+  { key: 'rousi', name: 'Rousi Pro', domain: 'rousi.pro', group: 'major' },
+  { key: 'tjupt', name: '北洋（TJUPT）', domain: 'tjupt.org', homepage: 'https://tjupt.org/', group: 'major' },
+  { key: 'ttg', name: 'TTG', domain: 'totheglory.im', group: 'major' },
+  { key: 'u2', name: 'U2', domain: 'u2.dmhy.org', homepage: 'https://u2.dmhy.org/', group: 'major' },
+  { key: 'yema', name: 'YemaPT', domain: 'yemapt.org', group: 'major' },
+  { key: 'zhuque', name: '朱雀（ZHUQUE）', domain: 'zhuque.in', homepage: 'https://zhuque.in/', group: 'major' },
 ]
 
 export const emptyConfig = (): Config => ({

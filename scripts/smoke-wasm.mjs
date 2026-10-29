@@ -72,6 +72,9 @@ const invoke = (op, payload) => rpc('runtime.invoke', { envelope: { op, invocati
 assert.equal(rpc('runtime.initialize', { protocol: 'dian115:wasm@1' }).ready, true)
 const initial = invoke('state', {})
 assert.equal(initial.state.live_execution, true)
+assert.ok(Array.isArray(initial.state.presets) && initial.state.presets.length >= 160, 'preset library populated: ' + (initial.state.presets || []).length)
+const presetGroups = new Set(initial.state.presets.map(p => p.group))
+assert.ok(presetGroups.has('major') && presetGroups.has('nexus'), 'preset groups present')
 assert.equal(invoke('state', { if_none_match: initial.etag }).not_modified, true)
 const emptyConfig = {
   schema_version: 1, enabled: false, cron: '', notify: false, queue_cnt: 5,

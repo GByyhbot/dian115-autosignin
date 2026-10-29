@@ -1,6 +1,6 @@
 # DIAN115 AutoSignIn
 
-DIAN115 Plugin API v2 站点自动签到插件，按计划自动签到、模拟登录 PT 站点并发送通知。适配自 MoviePilot autosignin 3.0.3，内置 22 个站点预设。
+DIAN115 Plugin API v2 站点自动签到插件，按计划自动签到、模拟登录 PT 站点并发送通知。适配自 MoviePilot autosignin 3.0.3；内置 22 个常用大站专用处理器 + 144 个 NexusPHP 小站通用签到预设（站点目录参考开源项目 PT-depiler，MIT），合计 166 个可选站点。
 
 ## 安装
 
@@ -22,7 +22,7 @@ https://cdn.jsdelivr.net/gh/GByyhbot/dian115-autosignin@main/plugin-market/index
 
 ## 功能
 
-- 内置 22 个站点预设：52pt、btschool、chdbits、haidan、hares、hdarea、hdchina、hdcity、hdsky、hdupt、mteam、nexushd、opencd、pterclub、pttime、ptzone、rousi、tjupt、ttg、u2、yema、zhuque；其余站点走通用 NexusPHP 签到。
+- 内置站点库分两组：常用大站（52pt、chdbits、haidan、hdsky、mteam、pterclub、ttg、u2 等 22 个，专用处理器）与 NexusPHP 小站（备胎、大宝剑、包子、库非、思齐、躺平、唐门、伊甸园、影客等 144 个，统一走通用 `attendance.php` 签到）；预设下拉支持搜索，选中自动回填站点 URL。其余非 NexusPHP 框架（Unit3D/Gazelle 等，无通用签到概念）可走自定义站点。
 - 三种调度模式：标准 5 字段 cron（如 `0 8 * * *`）、周期窗口（如 `2.3/9-23`）、纯周期（如 `2.3`）；留空则为每天 9–23 点随机执行 2 次。
 - 签到证据严格校验：不凭登录状态或按钮缺失推断签到完成，脚本/隐藏模板中的成功文案不计入证据。
 - 模拟登录保号：针对失效站点执行登录流程刷新 Cookie。
